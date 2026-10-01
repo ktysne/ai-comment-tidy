@@ -105,6 +105,7 @@ rec-studio で、コメントの整理を 2 回に分けて行った(2026-09-18�
 ## 実装の前提
 
 - Node.js 20 以上、ESM。実行時の依存パッケージは持たない。テストは vitest、lint は eslint を devDependencies で使う。
+- テストと lint の実行には、Node.js 22.12 以上が要る(vitest と eslint が求めるため)。道具そのものは 20 以上で動く。
 - 入口は 1 つ(`bin/comment-tidy.js`)で、サブコマンドで分ける。
 - 対象のリポジトリは `--repo`(既定はカレントディレクトリ)で指定する。
 - git は `child_process.execFileSync` で呼ぶ。`check --offline` は git を呼ばず、作業ツリーの外へ書き込まない。

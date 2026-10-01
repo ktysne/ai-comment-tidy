@@ -23,6 +23,7 @@
 ## 実装の前提
 
 - Node.js 20 以上、ESM。実行時の依存パッケージは持たない。テストは vitest、lint は eslint を devDependencies で使う。
+- テストと lint の実行には、Node.js 22.12 以上が要る(vitest と eslint が求めるため)。道具そのものは 20 以上で動く。
 - 入口は `bin/comment-tidy.js` の 1 つで、サブコマンドで分ける。
 - git は `child_process.execFileSync` で、引数の配列を渡して呼ぶ。シェルの文字列を組み立てない。
 - `tools/` は ai-cross-review からの取り込みで CommonJS である(`tools/package.json`)。道具本体のコードは `src/` に置く。

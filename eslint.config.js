@@ -4,7 +4,15 @@ import globals from 'globals';
 export default [
   {
     // tools/cross-review*.js は上流からの取り込みで、ここでは直さない。
-    ignores: ['node_modules/', 'tools/cross-review*.js', '.codegraph/', '.cross-review/', '.comment-tidy/'],
+    // eslint は .gitignore を読まないので、作業ツリーの写しができる置き場もここで外す。
+    ignores: [
+      'node_modules/',
+      'tools/cross-review*.js',
+      '.claude/worktrees/',
+      '.codegraph/',
+      '.cross-review/',
+      '.comment-tidy/',
+    ],
   },
   js.configs.recommended,
   {
