@@ -1,0 +1,18 @@
+# Claude Code のローカルの状態
+.claude/settings.local.json
+.claude/worktrees/
+
+# CodeGraph の索引
+.codegraph/
+
+# ai-cross-review のローカルの状態と生成物
+.cross-review-state.json
+.cross-review/
+
+# この道具を自分自身へ向けて試したときの作業用の置き場
+.comment-tidy/work/
+.comment-tidy/worktrees/
+
+node_modules/
+*.log
+*.tmp

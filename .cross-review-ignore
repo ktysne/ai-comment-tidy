@@ -1,0 +1,7 @@
+# 上流(ai-cross-review)からの取り込み。直すなら上流で直す。
+tools/cross-review.js
+tools/cross-review.sync.js
+tools/cross-review.sync-all.js
+docs/cross-review.md
+.cross-review.example.md
+.claude/skills/cross-review/SKILL.md
