@@ -1,0 +1,28 @@
+{
+  "name": "ai-comment-tidy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ソースコメントをコメント記述ルールへ適合させる道具と、編集時とコミット前の検査(lint)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "comment-tidy": "bin/comment-tidy.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint .",
+    "review:codex": "node tools/cross-review.js codex",
+    "review:codex:fix": "node tools/cross-review.js codex --fix",
+    "review:claude": "node tools/cross-review.js claude",
+    "sync": "node tools/cross-review.sync.js",
+    "sync:check": "node tools/cross-review.sync.js --check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.13.0",
+    "vitest": "^5.0.3"
+  }
+}
