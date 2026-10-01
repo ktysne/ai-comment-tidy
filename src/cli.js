@@ -1,3 +1,5 @@
+import { runLintCommand } from './lint/command.js';
+
 /** 終了コードの意味は docs/design.md「コマンド」が正本。 */
 export const EXIT_OK = 0;
 export const EXIT_FAILED = 1;
@@ -34,5 +36,13 @@ export async function run(argv, io = {}) {
     stderr(`コマンドが見つかりません: ${name}\n\n${usage()}`);
     return EXIT_USAGE;
   }
-  return command(rest, { stdout, stderr });
+  try {
+    return await command(rest, { stdout, stderr });
+  } catch (error) {
+    const detail = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim();
+    stderr(`コマンドの実行に失敗しました: ${detail || '原因不明のエラー'}`);
+    return EXIT_USAGE;
+  }
 }
+
+commands.set('lint', runLintCommand);
