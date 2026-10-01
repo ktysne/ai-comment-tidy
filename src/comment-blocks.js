@@ -12,7 +12,8 @@ function commentBody(text, languageId, closingMarker) {
   let body = text;
   if (languageId === 'cpp' || languageId === 'js') {
     if (body === '/**/') return '';
-    body = body.replace(/^\/\/+!?<?/, '').replace(/^\/\*+!?<?/, '');
+    // `//` の後ろは 1 文字だけ除く。全部除くと `//////////` の飾りの行が空になり、行数から漏れる。
+    body = body.replace(/^\/\/[/!]?<?/, '').replace(/^\/\*+!?<?/, '');
     body = body.replace(/^\*(?!\/)/, '').replace(/\*\/$/, '');
   } else if (languageId === 'cmake') {
     const bracket = /^#\[(=*)\[/.exec(body);
@@ -63,6 +64,7 @@ export function commentBlocks(filePath, rawSource) {
     end: index + 1 < lineStarts.length ? lineStarts[index + 1] - 1 : source.length,
     comments: [],
     hasCode: false,
+    continuesComment: false,
   }));
   const lineOf = (position) => {
     let low = 0;
@@ -89,10 +91,13 @@ export function commentBlocks(filePath, rawSource) {
       if (end <= start) continue;
       const text = source.slice(start, end);
       if (segment.kind === 'comment') {
-        if (text.trim()) row.comments.push({
-          text: text.trim(),
-          body: commentBody(text.trim(), languageId, closingMarker),
-        });
+        if (text.trim()) {
+          row.comments.push({
+            text: text.trim(),
+            body: commentBody(text.trim(), languageId, closingMarker),
+          });
+          if (segment.start < row.start) row.continuesComment = true;
+        }
       } else if (text.trim()) {
         row.hasCode = true;
       }
@@ -113,6 +118,15 @@ export function commentBlocks(filePath, rawSource) {
       text: row.comments.map((comment) => comment.text).join(' '),
       body: row.comments.map((comment) => comment.body).join(' '),
     }];
+    if (row.hasCode && row.continuesComment && pending && pending.endLine === index) {
+      // 前の行から続くコメントが閉じる行は、後ろにコードがあっても同じ 1 か所に数える。
+      // 別の 1 か所にすると、最後の行だけコードと並べて行数の上限を逃れられる。
+      pending.endLine = index + 1;
+      pending.lines.push(...lines);
+      flushBlock(blocks, pending);
+      pending = null;
+      continue;
+    }
     if (row.hasCode) {
       flushBlock(blocks, pending);
       pending = null;

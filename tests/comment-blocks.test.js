@@ -81,6 +81,21 @@ describe('コメントブロックの抽出', () => {
       .toEqual([{ startLine: 1, endLine: 1, trailing: true }, { startLine: 2, endLine: 3, trailing: false }]);
   });
 
+  test('複数行のブロックコメントが閉じる行にコードが続いても、同じ 1 か所に数える', () => {
+    const source = '/* 1\n * 2\n * 3\n * 4 */ int value = 1;\n// after';
+    const blocks = commentBlocks('file.cpp', source);
+    expect(blocks.map(({ startLine, endLine, trailing, countedLines }) => ({ startLine, endLine, trailing, countedLines })))
+      .toEqual([
+        { startLine: 1, endLine: 4, trailing: false, countedLines: 4 },
+        { startLine: 5, endLine: 5, trailing: false, countedLines: 1 },
+      ]);
+  });
+
+  test('スラッシュだけの飾りの行は、行数に数える', () => {
+    const [block] = commentBlocks('file.cpp', '//////////\n// a\n// b\n// c\n//////////');
+    expect(block.countedLines).toBe(5);
+  });
+
   test('ブロックコメントの中の空行でも、1 か所は切れる', () => {
     const source = '/*\nfirst\n\nsecond\n*/';
     expect(commentBlocks('file.cpp', source).map(({ startLine, endLine }) => ({ startLine, endLine })))
