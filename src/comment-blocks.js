@@ -65,6 +65,7 @@ export function commentBlocks(filePath, rawSource) {
     comments: [],
     hasCode: false,
     continuesComment: false,
+    opensComment: false,
   }));
   const lineOf = (position) => {
     let low = 0;
@@ -97,6 +98,7 @@ export function commentBlocks(filePath, rawSource) {
             body: commentBody(text.trim(), languageId, closingMarker),
           });
           if (segment.start < row.start) row.continuesComment = true;
+          if (segment.end > row.end) row.opensComment = true;
         }
       } else if (text.trim()) {
         row.hasCode = true;
@@ -118,13 +120,18 @@ export function commentBlocks(filePath, rawSource) {
       text: row.comments.map((comment) => comment.text).join(' '),
       body: row.comments.map((comment) => comment.body).join(' '),
     }];
+    // 複数行のコメントの最初の行と最後の行は、コードと並んでいても同じ 1 か所に数える。
+    // 別の 1 か所にすると、その行だけコードと並べて行数の上限を逃れられる。
     if (row.hasCode && row.continuesComment && pending && pending.endLine === index) {
-      // 前の行から続くコメントが閉じる行は、後ろにコードがあっても同じ 1 か所に数える。
-      // 別の 1 か所にすると、最後の行だけコードと並べて行数の上限を逃れられる。
       pending.endLine = index + 1;
       pending.lines.push(...lines);
       flushBlock(blocks, pending);
       pending = null;
+      continue;
+    }
+    if (row.hasCode && row.opensComment) {
+      flushBlock(blocks, pending);
+      pending = { startLine: index + 1, endLine: index + 1, trailing: false, lines };
       continue;
     }
     if (row.hasCode) {

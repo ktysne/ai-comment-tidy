@@ -75,10 +75,20 @@ describe('コメントブロックの抽出', () => {
     expect(commentBlocks('file.cpp', '//! first\n///< second').map((block) => block.text)).toEqual(['first\nsecond']);
   });
 
-  test('コードと同じ行から始まる複数行のブロックコメントは、同じ行の分だけを trailing にする', () => {
-    const source = 'int value = 1; /* first\n   second\n   third */\nint next = 2;';
+  test('コードの後ろから始まる複数行のブロックコメントは、始まる行も同じ 1 か所に数える', () => {
+    const source = 'int value = 1; /* 1\n   2\n   3\n   4 */\nint next = 2;';
+    expect(commentBlocks('file.cpp', source).map(({ startLine, endLine, trailing, countedLines }) => ({ startLine, endLine, trailing, countedLines })))
+      .toEqual([{ startLine: 1, endLine: 4, trailing: false, countedLines: 4 }]);
+  });
+
+  test('コードに挟まれた複数行のブロックコメントは、前後のコメントだけの行とつながらない', () => {
+    const source = '// before\nint a; /* 1\n   2 */ int b;\n// after';
     expect(commentBlocks('file.cpp', source).map(({ startLine, endLine, trailing }) => ({ startLine, endLine, trailing })))
-      .toEqual([{ startLine: 1, endLine: 1, trailing: true }, { startLine: 2, endLine: 3, trailing: false }]);
+      .toEqual([
+        { startLine: 1, endLine: 1, trailing: false },
+        { startLine: 2, endLine: 3, trailing: false },
+        { startLine: 4, endLine: 4, trailing: false },
+      ]);
   });
 
   test('複数行のブロックコメントが閉じる行にコードが続いても、同じ 1 か所に数える', () => {
