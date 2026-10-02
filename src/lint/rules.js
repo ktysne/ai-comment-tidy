@@ -9,7 +9,7 @@ const TOOL_ANNOTATION_PATTERN = /eslint-|NOLINT|clang-format|clang-tidy|@ts-|pre
 // 直前の文字の条件は後読みにし、当たった語に含めない(括弧の直後の番号も番号だけを報告し、allow の語と合うように)。
 const ISSUE_REFERENCE_PATTERN = /[Ii]ssue ?#\d+|PR ?#\d+|(?<![0-9A-Za-z&#])#\d{1,4}(?![0-9A-Fa-f])/;
 // チケットのキーは大文字 2 文字以上に限り、同じ形の規格名(UTF-8、SHA-256 など)を除く。`x-1` もチケットと誤らない。
-const TICKET_PATTERN = /\b(?!(?:UTF|ISO|SHA|MD|CP|AES|RSA|MP|JIS)-)[A-Z][A-Z0-9]+-\d+\b|[Ii]ssue ?#\d+|PR ?#\d+|(?<![0-9A-Za-z&#])#\d+(?![0-9A-Fa-f])|(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|www\.)\S+|\bTracking\b|追跡先/;
+const TICKET_PATTERN = /\b(?!(?:UTF|ISO|IEC|IEEE|ECMA|MPEG|SHA|MD|CRC|CP|AES|RSA|MP|JIS)-)[A-Z][A-Z0-9]+-\d+\b|[Ii]ssue ?#\d+|PR ?#\d+|(?<![0-9A-Za-z&#])#\d+(?![0-9A-Fa-f])|(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|www\.)\S+|\bTracking\b|追跡先/;
 const TODO_PATTERN = /\b(?:TODO|FIXME|HACK)\b/;
 
 const RULES = [

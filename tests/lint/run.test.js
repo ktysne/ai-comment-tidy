@@ -124,6 +124,19 @@ describe('lintRepository', () => {
     expect(lintRepository({ repoRoot: root, mode: 'changed' })).toEqual({ files: [], confirmed: 0, review: 0 });
   });
 
+  test('ステージしていない名前の変更でも、changed は既存の違反を報告しない', () => {
+    const root = makeRepo();
+    write(root, 'old.cpp', '// #1\n\n// TODO later\n\nint value = 1;\n');
+    commitAll(root);
+    fs.renameSync(path.join(root, 'old.cpp'), path.join(root, 'new.cpp'));
+
+    expect(lintRepository({ repoRoot: root, mode: 'changed' })).toEqual({ files: [], confirmed: 0, review: 0 });
+
+    write(root, 'new.cpp', '// #1\n\n// TODO later\n\nint value = 1;\n// #2\n');
+    const result = lintRepository({ repoRoot: root, mode: 'changed' });
+    expect(result.files[0].violations.map(({ matched }) => matched)).toEqual(['#2']);
+  });
+
   test('名前を変えたファイルに足した違反は報告する', () => {
     const root = makeRepo();
     write(root, 'old.cpp', '// #1\n\nint value = 1;\nint other = 2;\nint third = 3;\n');

@@ -51,9 +51,19 @@ function hasHead(repoRoot) {
   return gitAllowingStatus(repoRoot, ['rev-parse', '--verify', '--quiet', 'HEAD'], [1]) !== null;
 }
 
+function realPathOrSelf(directory) {
+  try {
+    return fs.realpathSync.native(directory);
+  } catch {
+    return directory;
+  }
+}
+
 function normalizeFilePath(repoRoot, input, baseDirectory) {
-  const absolutePath = path.resolve(path.isAbsolute(input) ? input : path.join(baseDirectory, input));
-  const relativePath = path.relative(repoRoot, absolutePath);
+  const resolvedPath = path.resolve(path.isAbsolute(input) ? input : path.join(baseDirectory, input));
+  // ルートは実体のパスで得られる。ジャンクションを経由したパスのままだと、リポジトリの外と誤る。
+  const absolutePath = path.join(realPathOrSelf(path.dirname(resolvedPath)), path.basename(resolvedPath));
+  const relativePath = path.relative(realPathOrSelf(repoRoot), absolutePath);
   if (!relativePath || relativePath === '..' || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
     throw new Error(`ファイルはリポジトリの中を指定してください: ${input}`);
   }
@@ -210,6 +220,17 @@ function fileEntries(repoRoot, mode, files, headExists, baseDirectory) {
   throw new Error(`lint の実行モードが不正です: ${mode}`);
 }
 
+/**
+ * 作業ツリーから消えたファイルの違反を集める。
+ * ステージしていない名前の変更は「削除と未追跡の追加」に見えるので、新しいファイルの比べる元にこれを使う。
+ */
+function deletedFileViolations(repoRoot, baselinePaths, options) {
+  const deleted = gitPaths(repoRoot, ['diff', '--name-only', '-z', '--diff-filter=D', 'HEAD', '--']);
+  return deleted
+    .filter((deletedPath) => languageOf(deletedPath))
+    .flatMap((deletedPath) => findViolations(deletedPath, headSource(repoRoot, deletedPath, baselinePaths), options));
+}
+
 function emptyResult() {
   return { files: [], confirmed: 0, review: 0 };
 }
@@ -235,6 +256,12 @@ export function lintRepository({ repoRoot, mode, files = [], baseDirectory }) {
   const results = [];
   let confirmed = 0;
   let review = 0;
+  const options = {
+    maxCommentLines: config.maxCommentLines,
+    licensePatterns: config.licensePatterns,
+    allow: config.lint.allow,
+  };
+  let movedBaseline = null;
 
   for (const relativePath of paths) {
     if (!languageOf(relativePath) || isExcluded(relativePath, config.scope.exclude)) continue;
@@ -248,14 +275,15 @@ export function lintRepository({ repoRoot, mode, files = [], baseDirectory }) {
     const currentSource = mode === 'staged'
       ? indexSource(root, relativePath)
       : worktreeSource(root, relativePath);
-    const baselineSource = headSource(root, basePathOf.get(relativePath), baselinePaths);
-    const options = {
-      maxCommentLines: config.maxCommentLines,
-      licensePatterns: config.licensePatterns,
-      allow: config.lint.allow,
-    };
+    const basePath = basePathOf.get(relativePath);
     const currentViolations = findViolations(relativePath, currentSource, options);
-    const baselineViolations = findViolations(relativePath, baselineSource, options);
+    let baselineViolations;
+    if (mode === 'changed' && headExists && !baselinePaths.has(basePath)) {
+      movedBaseline ??= deletedFileViolations(root, baselinePaths, options);
+      baselineViolations = movedBaseline;
+    } else {
+      baselineViolations = findViolations(relativePath, headSource(root, basePath, baselinePaths), options);
+    }
     const violations = newViolations(currentViolations, baselineViolations);
     if (violations.length === 0) continue;
     for (const violation of violations) {
