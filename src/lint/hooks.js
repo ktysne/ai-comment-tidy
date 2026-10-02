@@ -18,14 +18,6 @@ function normalizeNewlines(text) {
   return text.replace(/\r\n?/g, '\n');
 }
 
-function samePath(left, right) {
-  const normalizedLeft = path.resolve(left);
-  const normalizedRight = path.resolve(right);
-  return process.platform === 'win32'
-    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
-    : normalizedLeft === normalizedRight;
-}
-
 function lineRangeAt(source, start, length) {
   const startLine = source.slice(0, start).split('\n').length;
   const end = start + length;
@@ -243,7 +235,7 @@ const GLOBAL_OPTIONS_WITH_VALUE = new Set([
 ]);
 const COMMIT_OPTIONS_WITH_VALUE = new Set([
   '-C', '-c', '-F', '-m', '--author', '--cleanup', '--date', '--file', '--fixup', '--message', '--pathspec-from-file',
-  '--reedit-message', '--reuse-message', '--squash', '--template',
+  '--reedit-message', '--reuse-message', '--squash', '--template', '--trailer',
 ]);
 
 const COMMIT_OPTIONS_WITHOUT_VALUE = new Set([
@@ -356,6 +348,7 @@ function parseGitCommand(rawTokens, baseDirectory, currentDirectory) {
 function parseCommitArguments(args) {
   const paths = [];
   let all = false;
+  let include = false;
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
     if (argument === '--') {
@@ -365,6 +358,10 @@ function parseCommitArguments(args) {
     const longOption = argument.split('=', 1)[0];
     if (longOption === '--all' && argument === '--all') {
       all = true;
+      continue;
+    }
+    if (argument === '--include') {
+      include = true;
       continue;
     }
     if (COMMIT_OPTIONS_WITH_VALUE.has(argument)) {
@@ -381,6 +378,7 @@ function parseCommitArguments(args) {
       for (const option of argument.slice(1)) {
         if (!COMMIT_SHORT_OPTIONS.has(option)) return null;
         if (option === 'a') all = true;
+        if (option === 'i') include = true;
         if (option === 'S') break;
         if ('CcFm'.includes(option)) {
           if (argument.at(-1) === option) {
@@ -394,7 +392,7 @@ function parseCommitArguments(args) {
     }
     paths.push(argument);
   }
-  return { all, paths };
+  return { all, include, paths };
 }
 
 function parseAddArguments(args) {
@@ -451,16 +449,16 @@ export function detectCommit(command, baseDirectory = process.cwd()) {
 
   const commit = parsed[commitIndex];
   const commitArguments = parseCommitArguments(commit.args);
-  if (!commitArguments) return { directory: commit.directory, mode: 'staged' };
-  const filesFrom = (paths, directory) => paths.map((file) => path.resolve(directory, file));
-  if (commitArguments.paths.length > 0) {
+  const pathsFrom = (paths, directory) => paths.map((file) => path.resolve(directory, file));
+  if (commitArguments?.paths.length > 0) {
     return {
       directory: commit.directory,
-      mode: 'files',
-      files: filesFrom(commitArguments.paths, commit.absoluteDirectory),
+      mode: commitArguments.include ? 'staged-with-worktree' : 'changed',
+      paths: pathsFrom(commitArguments.paths, commit.absoluteDirectory),
+      includeUntracked: false,
     };
   }
-  if (commitArguments.all) return { directory: commit.directory, mode: 'changed', includeUntracked: false };
+  if (commitArguments?.all) return { directory: commit.directory, mode: 'changed', includeUntracked: false };
 
   const additions = parsed.slice(0, commitIndex).filter((item) => item?.subcommand === 'add');
   if (additions.length === 0) return { directory: commit.directory, mode: 'staged' };
@@ -478,13 +476,45 @@ export function detectCommit(command, baseDirectory = process.cwd()) {
     return { directory: commit.directory, mode: 'changed', includeUntracked: false };
   }
   const files = parsedAdditions.flatMap(({ addition, selection }) => (
-    filesFrom(selection.paths, addition.absoluteDirectory)
+    pathsFrom(selection.paths, addition.absoluteDirectory)
   ));
   return {
     directory: commit.directory,
-    mode: 'staged-and-files',
-    files: [...new Set(files)],
+    mode: 'staged-with-worktree',
+    paths: [...new Set(files)],
   };
+}
+
+function realPathOrSelf(absolutePath) {
+  try {
+    return fs.realpathSync.native(absolutePath);
+  } catch {
+    return absolutePath;
+  }
+}
+
+function physicalPath(absolutePath) {
+  let existingPath = path.resolve(absolutePath);
+  const remainingParts = [];
+  while (!fs.existsSync(existingPath)) {
+    const parent = path.dirname(existingPath);
+    if (parent === existingPath) break;
+    remainingParts.unshift(path.basename(existingPath));
+    existingPath = parent;
+  }
+  return path.join(realPathOrSelf(existingPath), ...remainingParts);
+}
+
+function pathspecsFromPaths(paths, repoRoot) {
+  const realRoot = realPathOrSelf(path.resolve(repoRoot));
+  const pathspecs = [];
+  for (const absolutePath of paths) {
+    const physical = physicalPath(absolutePath);
+    const relative = path.relative(realRoot, physical);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    pathspecs.push(relative === '' ? '.' : relative.split(path.sep).join('/'));
+  }
+  return [...new Set(pathspecs)];
 }
 
 function runPostEdit({ toolInput, toolName, toolResponse, cwd }, deps) {
@@ -521,43 +551,22 @@ function runPreCommit({ toolInput, cwd }, deps) {
   const repoRoot = repositoryRootOrNull(directory, deps.repositoryRootOf);
   if (repoRoot === null) return 0;
 
-  const files = commit.files ?? [];
-  const mode = commit.mode === 'staged-and-files'
-      && files.some((file) => samePath(file, repoRoot))
-    ? 'changed'
-    : commit.mode;
-  let result;
-  if (mode === 'staged-and-files') {
-    const staged = deps.lintRepository({ repoRoot, mode: 'staged' });
-    const selected = deps.lintRepository({ repoRoot, mode: 'files', files, baseDirectory: cwd });
-    const mergedFiles = [
-      ...staged.files.filter(({ path: filePath }) => {
-        const absolutePath = path.join(repoRoot, ...filePath.split('/'));
-        return !files.some((file) => {
-          const targetPath = path.resolve(file);
-          if (samePath(targetPath, absolutePath)) return true;
-          const relativePath = path.relative(targetPath, absolutePath);
-          return relativePath !== '' && relativePath !== '..'
-            && !relativePath.startsWith(`..${path.sep}`) && !path.isAbsolute(relativePath)
-            && fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
-        });
-      }),
-      ...selected.files,
-    ];
-    const violations = mergedFiles.flatMap(({ violations: fileViolations }) => fileViolations);
-    result = {
-      files: mergedFiles,
-      confirmed: violations.filter(({ severity }) => severity === 'confirmed').length,
-      review: violations.filter(({ severity }) => severity === 'review').length,
-    };
-  } else {
-    result = deps.lintRepository({
-      repoRoot,
-      mode,
-      ...(mode === 'files' ? { files, baseDirectory: cwd } : {}),
-      ...(commit.includeUntracked === false ? { includeUntracked: false } : {}),
-    });
+  let mode = commit.mode;
+  let pathspecs;
+  if (commit.paths) {
+    pathspecs = pathspecsFromPaths(commit.paths, repoRoot);
+    if (pathspecs === null) {
+      mode = 'staged';
+    } else if (mode === 'staged-with-worktree' && pathspecs.includes('.')) {
+      mode = 'changed';
+    }
   }
+  const result = deps.lintRepository({
+    repoRoot,
+    mode,
+    ...(pathspecs && mode !== 'staged' ? { pathspecs } : {}),
+    ...(commit.includeUntracked === false ? { includeUntracked: false } : {}),
+  });
   const report = formatReport(result);
   if (!report) return 0;
   if (result.confirmed > 0) {

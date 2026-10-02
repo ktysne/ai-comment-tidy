@@ -259,15 +259,38 @@ describe('detectCommit', () => {
     ['git commit --all', { directory: null, mode: 'changed', includeUntracked: false }],
     ['git add src/file.cpp && git commit -m x', {
       directory: null,
-      mode: 'staged-and-files',
-      files: [path.resolve('src/file.cpp')],
+      mode: 'staged-with-worktree',
+      paths: [path.resolve('src/file.cpp')],
     }],
     ['cd repo && cd sub && git add file.cpp && git commit -m x', {
       directory: path.join('repo', 'sub'),
-      mode: 'staged-and-files',
-      files: [path.resolve('repo', 'sub', 'file.cpp')],
+      mode: 'staged-with-worktree',
+      paths: [path.resolve('repo', 'sub', 'file.cpp')],
     }],
-    ['git commit -- src/file.cpp', { directory: null, mode: 'files', files: [path.resolve('src/file.cpp')] }],
+    ['git commit -- src/file.cpp', {
+      directory: null,
+      mode: 'changed',
+      paths: [path.resolve('src/file.cpp')],
+      includeUntracked: false,
+    }],
+    ['git commit -i -- src/file.cpp', {
+      directory: null,
+      mode: 'staged-with-worktree',
+      paths: [path.resolve('src/file.cpp')],
+      includeUntracked: false,
+    }],
+    ['git commit --include src/file.cpp', {
+      directory: null,
+      mode: 'staged-with-worktree',
+      paths: [path.resolve('src/file.cpp')],
+      includeUntracked: false,
+    }],
+    ['git add -A && git commit --trailer "X: y" -m x', { directory: null, mode: 'changed' }],
+    ['git add src/file.cpp && git commit --unknown -a', {
+      directory: null,
+      mode: 'staged-with-worktree',
+      paths: [path.resolve('src/file.cpp')],
+    }],
     ['git add --unknown && git commit -m x', { directory: null, mode: 'staged' }],
     ['git status\ngit commit -m x', { directory: null, mode: 'staged' }],
   ])('コミットを作る形を判定する: %s', (command, expected) => {
@@ -353,6 +376,60 @@ describe('lint --hook pre-commit', () => {
     expect(result.stderr[0]).toContain('#42');
   });
 
+  test('git commit -- <フォルダー> は、その中の未追跡ファイルを調べない', async () => {
+    const root = makeRepo();
+    fs.mkdirSync(path.join(root, 'selected'));
+    fs.writeFileSync(path.join(root, 'selected', 'untracked.cpp'), '// #99\n', 'utf8');
+
+    const result = await runHook('pre-commit', commitInput(root, 'git commit -- selected'));
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toEqual([]);
+  });
+
+  test('git add <フォルダー> は範囲内の未追跡と範囲外のステージ内容を調べる', async () => {
+    const root = makeRepo();
+    writeSource(root, '// #42\n');
+    execFileSync('git', ['-C', root, 'add', '--', 'source.cpp']);
+    fs.mkdirSync(path.join(root, 'selected'));
+    fs.writeFileSync(path.join(root, 'selected', 'untracked.cpp'), '// #99\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'outside.cpp'), '// #77\n', 'utf8');
+
+    const result = await runHook('pre-commit', commitInput(root, 'git add selected && git commit -m x'));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('#42');
+    expect(result.stderr[0]).toContain('#99');
+    expect(result.stderr[0]).not.toContain('#77');
+  });
+
+  test('git commit -i はパスの作業ツリーと範囲外のステージ内容を調べる', async () => {
+    const root = makeRepo();
+    fs.writeFileSync(path.join(root, 'selected.cpp'), '// safe\n', 'utf8');
+    execFileSync('git', ['-C', root, 'add', '--', 'selected.cpp']);
+    execFileSync('git', ['-C', root, 'commit', '--quiet', '-m', 'selected']);
+    writeSource(root, '// #42\n');
+    execFileSync('git', ['-C', root, 'add', '--', 'source.cpp']);
+    fs.writeFileSync(path.join(root, 'selected.cpp'), '// #99\n', 'utf8');
+
+    const result = await runHook('pre-commit', commitInput(root, 'git commit -i -m x -- selected.cpp'));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('#42');
+    expect(result.stderr[0]).toContain('#99');
+  });
+
+  test('リポジトリ外のパスを指定した commit は staged を調べる', async () => {
+    const root = makeRepo();
+    writeSource(root, '// #42\n');
+    execFileSync('git', ['-C', root, 'add', '--', 'source.cpp']);
+
+    const result = await runHook('pre-commit', commitInput(root, 'git commit -- ../outside.cpp'));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('#42');
+  });
+
   test.each([
     'git commit -a -m x',
     'git add -u && git commit -m x',
@@ -368,7 +445,7 @@ describe('lint --hook pre-commit', () => {
     expect(result.stderr[0]).not.toContain('#99');
   });
 
-  test('git add のパスはステージ結果と合わせ、同じファイルには files の結果を使う', async () => {
+  test('git add のパスはステージ結果と合わせ、同じファイルには作業ツリーの内容を使う', async () => {
     const root = makeRepo();
     writeSource(root, '// #42\n');
     execFileSync('git', ['-C', root, 'add', '--', 'source.cpp']);

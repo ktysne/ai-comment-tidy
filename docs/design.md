@@ -476,16 +476,20 @@ Claude Code はフックの JSON を標準入力へ渡す。
 
 | コマンドの形 | 検査する範囲 |
 |---|---|
-| `git commit`(ほかの形に当たらない) | `staged` |
-| 前に `git add -A`、`git add --all`、リポジトリのルートを指す `git add .` | 未追跡を含む `changed` |
+| `git commit <path...>`(`-i` / `--include` なし) | 指定パスに絞った `changed`。未追跡は含めない |
+| `git commit -i <path...>` / `--include` | `staged-with-worktree`。指定パスは作業ツリー、範囲外はインデックスを調べる |
+| 前に `git add <path...>` | `staged-with-worktree`。指定パスでは未追跡も含める |
+| 前に `git add -A` / `--all`、またはルートの `.` | 未追跡を含む `changed` |
 | 前に `git add -u` / `--update`、または `git commit -a` / `--all` | 未追跡を除いた `changed` |
-| 前に `git add <path...>`(上に当たらない) | `staged` と指定パスの `files` を合わせる。同じファイルは `files` の結果を使う |
-| `git commit <path...>`(位置引数がある) | 指定パスの `files` だけ |
-| `git add` の引数を解釈できない | `staged` |
+| `git commit` の引数を解釈できない | commit のパスと `-a` を無いものとして先行する `git add` を判定する。該当しなければ `staged` |
+| ほかの形 | `staged` |
 
 `changed` は作業ツリーと HEAD、`staged` はインデックスと HEAD、`files` は作業ツリーと HEAD を比べる。
-`changed` から未追跡を除く指定は `git commit -a` と `git add -u` に限り、通常の `lint --changed` は未追跡も含める。
-指定パスは `git add` または `git commit` を実行する位置から解決する。
+`staged-with-worktree` は、指定パスの範囲では作業ツリーと HEAD を比べ、範囲外ではインデックスと HEAD を比べる。
+指定範囲のファイルは作業ツリーの内容を使い、インデックスの内容は使わない。
+`changed` から未追跡を除く指定は `git commit -a`、`git commit <path...>`、`git add -u` に限り、通常の `lint --changed` は未追跡も含める。
+指定パスは `git add` または `git commit` を実行する位置から解決し、実体のパスをリポジトリルートからの相対パスに直して pathspec に渡す。
+ルートの外を指すパスがあれば `staged` を調べる。
 先頭の `cd`、`Set-Location`、`sl`、`pushd` は順に適用し、相対パスは直前の位置を基準に解決する。
 先頭の `(` と `NAME=value` の形の環境変数指定は読み飛ばす。
 Git のグローバルオプションでは `-P` も受け付ける。

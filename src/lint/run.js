@@ -188,74 +188,66 @@ function samePathEntries(paths) {
   return paths.map((filePath) => ({ path: filePath, basePath: filePath }));
 }
 
-function changedEntries(repoRoot, headExists, includeUntracked) {
+function changedEntries(repoRoot, headExists, includeUntracked, pathspecs = []) {
+  const pathArguments = ['--', ...pathspecs];
   const untracked = includeUntracked
-    ? samePathEntries(gitPaths(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z']))
+    ? samePathEntries(gitPaths(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z', ...pathArguments]))
     : [];
   if (headExists) {
     return [
-      ...parseNameStatus(gitPaths(repoRoot, ['diff', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', '--'])),
+      ...parseNameStatus(gitPaths(repoRoot, ['diff', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', ...pathArguments])),
       ...untracked,
     ];
   }
   return [
-    ...samePathEntries(gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', DIFF_FILTER, '--'])),
-    ...samePathEntries(gitPaths(repoRoot, ['diff', '--name-only', '-z', DIFF_FILTER, '--'])),
+    ...samePathEntries(gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', DIFF_FILTER, ...pathArguments])),
+    ...samePathEntries(gitPaths(repoRoot, ['diff', '--name-only', '-z', DIFF_FILTER, ...pathArguments])),
     ...untracked,
   ];
 }
 
-function stagedEntries(repoRoot, headExists) {
+function stagedEntries(repoRoot, headExists, pathspecs = []) {
+  const pathArguments = ['--', ...pathspecs];
   if (!headExists) {
-    return samePathEntries(gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', DIFF_FILTER, '--']));
+    return samePathEntries(gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', DIFF_FILTER, ...pathArguments]));
   }
-  return parseNameStatus(gitPaths(repoRoot, ['diff', '--cached', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', '--']));
+  return parseNameStatus(gitPaths(repoRoot, ['diff', '--cached', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', ...pathArguments]));
 }
 
-function filesUnderDirectory(repoRoot, absoluteDirectory) {
-  const entries = [];
-  const visit = (directory) => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const absolutePath = path.join(directory, entry.name);
-      const relativePath = path.relative(repoRoot, absolutePath).split(path.sep).join('/');
-      if (entry.isDirectory()) {
-        if (entry.name === '.git' || isIgnored(repoRoot, relativePath)) continue;
-        visit(absolutePath);
-      } else if (entry.isFile()) {
-        entries.push({ path: relativePath, basePath: relativePath });
-      }
-    }
-  };
-  visit(absoluteDirectory);
-  return entries;
+function pathMatchesPathspec(relativePath, pathspec) {
+  const normalized = pathspec.replace(/\\/g, '/').replace(/\/+$/, '');
+  return normalized === '' || normalized === '.' || relativePath === normalized
+    || relativePath.startsWith(`${normalized}/`);
 }
 
-function fileEntries(repoRoot, mode, files, headExists, baseDirectory, includeUntracked) {
+function stagedWithWorktreeEntries(repoRoot, headExists, includeUntracked, pathspecs) {
+  const worktreeEntries = changedEntries(repoRoot, headExists, includeUntracked, pathspecs)
+    .map((entry) => ({ ...entry, source: 'worktree' }));
+  const worktreePaths = new Set(worktreeEntries.map(({ path: filePath }) => filePath));
+  const indexEntries = stagedEntries(repoRoot, headExists)
+    .filter(({ path: filePath }) => !pathspecs.some((pathspec) => pathMatchesPathspec(filePath, pathspec)))
+    .filter(({ path: filePath }) => !worktreePaths.has(filePath))
+    .map((entry) => ({ ...entry, source: 'index' }));
+  return [...worktreeEntries, ...indexEntries];
+}
+
+function fileEntries(repoRoot, mode, files, headExists, baseDirectory, includeUntracked, pathspecs) {
   if (mode === 'files') {
     if (!Array.isArray(files) || files.length === 0) throw new Error('lint するファイルを指定してください');
     const entries = [];
     for (const file of files) {
-      const resolvedPath = path.resolve(path.isAbsolute(file) ? file : path.join(baseDirectory, file));
-      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
-        const realDirectory = realPathOrSelf(resolvedPath);
-        const realRoot = realPathOrSelf(repoRoot);
-        const relativeDirectory = path.relative(realRoot, realDirectory);
-        if (relativeDirectory === '..' || relativeDirectory.startsWith(`..${path.sep}`)
-            || path.isAbsolute(relativeDirectory)) {
-          throw new Error(`ファイルはリポジトリの中を指定してください: ${file}`);
-        }
-        entries.push(...filesUnderDirectory(repoRoot, realDirectory));
-      } else {
-        const relativePath = normalizeFilePath(repoRoot, file, baseDirectory);
-        entries.push({ path: relativePath, basePath: relativePath });
-      }
+      const relativePath = normalizeFilePath(repoRoot, file, baseDirectory);
+      entries.push({ path: relativePath, basePath: relativePath });
     }
     const unique = new Map();
     for (const entry of entries) if (!unique.has(entry.path)) unique.set(entry.path, entry);
     return [...unique.values()];
   }
-  if (mode === 'changed') return changedEntries(repoRoot, headExists, includeUntracked);
-  if (mode === 'staged') return stagedEntries(repoRoot, headExists);
+  if (mode === 'changed') return changedEntries(repoRoot, headExists, includeUntracked, pathspecs);
+  if (mode === 'staged') return stagedEntries(repoRoot, headExists, pathspecs);
+  if (mode === 'staged-with-worktree') {
+    return stagedWithWorktreeEntries(repoRoot, headExists, includeUntracked, pathspecs);
+  }
   throw new Error(`lint の実行モードが不正です: ${mode}`);
 }
 
@@ -263,8 +255,8 @@ function fileEntries(repoRoot, mode, files, headExists, baseDirectory, includeUn
  * 作業ツリーから消えたファイルの違反を集める。
  * ステージしていない名前の変更は「削除と未追跡の追加」に見えるので、新しいファイルの比べる元にこれを使う。
  */
-function deletedFileViolations(repoRoot, baselinePaths, options) {
-  const deleted = gitPaths(repoRoot, ['diff', '--name-only', '-z', '--diff-filter=D', 'HEAD', '--']);
+function deletedFileViolations(repoRoot, baselinePaths, options, pathspecs) {
+  const deleted = gitPaths(repoRoot, ['diff', '--name-only', '-z', '--diff-filter=D', 'HEAD', '--', ...pathspecs]);
   return deleted
     .filter((deletedPath) => languageOf(deletedPath))
     .flatMap((deletedPath) => findViolations(deletedPath, headSource(repoRoot, deletedPath, baselinePaths), options));
@@ -277,9 +269,10 @@ function emptyResult() {
 /**
  * @param {string} [options.repoRoot] 省くと、カレントディレクトリを含むリポジトリのルートを使う
  * @param {string} [options.baseDirectory] 相対パスのファイル名を解決する基準。既定は、repoRoot を渡したときはそのルート、省いたときはカレントディレクトリ
- * @param {boolean} [options.includeUntracked=true] `changed` で未追跡ファイルを含めるか
+ * @param {boolean} [options.includeUntracked=true] `changed` と `staged-with-worktree` の作業ツリー範囲で未追跡ファイルを含めるか
+ * @param {string[]} [options.pathspecs=[]] 変更一覧を絞るリポジトリルートからのリテラルパス
  */
-export function lintRepository({ repoRoot, mode, files = [], baseDirectory, includeUntracked = true }) {
+export function lintRepository({ repoRoot, mode, files = [], baseDirectory, includeUntracked = true, pathspecs = [] }) {
   const root = repoRoot === undefined ? repositoryRootOf(baseDirectory ?? process.cwd()) : path.resolve(repoRoot);
   const fileBase = baseDirectory ?? (repoRoot === undefined ? process.cwd() : root);
   const config = loadLintConfig(root);
@@ -289,8 +282,8 @@ export function lintRepository({ repoRoot, mode, files = [], baseDirectory, incl
   const headExists = hasHead(root);
   const baselinePaths = headPaths(root, headExists);
   const basePathOf = new Map();
-  for (const entry of fileEntries(root, mode, files, headExists, fileBase, includeUntracked)) {
-    if (!basePathOf.has(entry.path)) basePathOf.set(entry.path, entry.basePath);
+  for (const entry of fileEntries(root, mode, files, headExists, fileBase, includeUntracked, pathspecs)) {
+    if (!basePathOf.has(entry.path)) basePathOf.set(entry.path, entry);
   }
   const paths = [...basePathOf.keys()].sort();
   const results = [];
@@ -307,20 +300,19 @@ export function lintRepository({ repoRoot, mode, files = [], baseDirectory, incl
     if (!languageOf(relativePath) || isExcluded(relativePath, config.scope.exclude)) continue;
     if (mode === 'files' && isIgnored(root, relativePath)) continue;
     const absolutePath = path.join(root, ...relativePath.split('/'));
-    if (mode !== 'staged') {
-      if (mode === 'changed' && !fs.existsSync(absolutePath)) continue;
-      if (mode === 'files' && !fs.existsSync(absolutePath)) continue;
-      if (!fs.statSync(absolutePath).isFile()) continue;
+    const entry = basePathOf.get(relativePath);
+    if (mode !== 'staged' && entry.source !== 'index') {
+      if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) continue;
     }
 
-    const currentSource = mode === 'staged'
+    const currentSource = mode === 'staged' || entry.source === 'index'
       ? indexSource(root, relativePath)
       : worktreeSource(root, relativePath);
-    const basePath = basePathOf.get(relativePath);
+    const basePath = entry.basePath;
     const currentViolations = findViolations(relativePath, currentSource, options);
     let baselineViolations;
-    if (mode === 'changed' && headExists && !baselinePaths.has(basePath)) {
-      movedBaseline ??= deletedFileViolations(root, baselinePaths, options);
+    if ((mode === 'changed' || entry.source === 'worktree') && headExists && !baselinePaths.has(basePath)) {
+      movedBaseline ??= deletedFileViolations(root, baselinePaths, options, pathspecs);
       baselineViolations = movedBaseline;
     } else {
       baselineViolations = findViolations(relativePath, headSource(root, basePath, baselinePaths), options);
