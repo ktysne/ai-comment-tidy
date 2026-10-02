@@ -114,6 +114,49 @@ describe('lintRepository', () => {
     expect(lintRepository({ repoRoot: root, mode: 'changed' })).toEqual({ files: [], confirmed: 0, review: 0 });
   });
 
+  test('名前を変えただけのファイルは、変更前の名前の内容と比べ、既存の違反を報告しない', () => {
+    const root = makeRepo();
+    write(root, 'old.cpp', '// #1\n\n// TODO later\n\nint value = 1;\n');
+    commitAll(root);
+    execFileSync('git', ['-C', root, 'mv', 'old.cpp', 'new.cpp']);
+
+    expect(lintRepository({ repoRoot: root, mode: 'staged' })).toEqual({ files: [], confirmed: 0, review: 0 });
+    expect(lintRepository({ repoRoot: root, mode: 'changed' })).toEqual({ files: [], confirmed: 0, review: 0 });
+  });
+
+  test('名前を変えたファイルに足した違反は報告する', () => {
+    const root = makeRepo();
+    write(root, 'old.cpp', '// #1\n\nint value = 1;\nint other = 2;\nint third = 3;\n');
+    commitAll(root);
+    execFileSync('git', ['-C', root, 'mv', 'old.cpp', 'new.cpp']);
+    write(root, 'new.cpp', '// #1\n\nint value = 1;\nint other = 2;\nint third = 3;\n// #2\n');
+    execFileSync('git', ['-C', root, 'add', '--all']);
+
+    const result = lintRepository({ repoRoot: root, mode: 'staged' });
+    expect(result.confirmed).toBe(1);
+    expect(result.files[0].violations.map(({ matched }) => matched)).toEqual(['#2']);
+  });
+
+  test('scope.exclude のフォルダーに当たるパターンは、その下のファイルにも当たる', () => {
+    const root = makeRepo();
+    write(root, 'a/gen/x.cpp', '// #1\n');
+    write(root, 'skip/sub/y.cpp', '// #2\n');
+    const configPath = path.join(root, '.comment-tidy', 'config.json');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify({ scope: { exclude: ['**/gen', 'skip/*'] } }), 'utf8');
+
+    expect(lintRepository({ repoRoot: root, mode: 'changed' })).toEqual({ files: [], confirmed: 0, review: 0 });
+  });
+
+  test('repoRoot を省くと、基準のフォルダーを含むリポジトリのルートを使い、相対パスを基準のフォルダーから解決する', () => {
+    const root = makeRepo();
+    write(root, 'src/deep/file.cpp', '// #7\n');
+
+    const result = lintRepository({ mode: 'files', files: ['file.cpp'], baseDirectory: path.join(root, 'src', 'deep') });
+    expect(result.files.map(({ path: filePath }) => filePath)).toEqual(['src/deep/file.cpp']);
+    expect(result.confirmed).toBe(1);
+  });
+
   test('コミットが無いリポジトリでも追加ファイルを検査する', () => {
     const root = makeRepo();
     write(root, 'src/first.cpp', '// #321\n');

@@ -39,9 +39,21 @@ describe('コメント規則', () => {
     expect(violations('// TODO implement this #123')).toEqual([]);
   });
 
+  test('括弧などに続く番号は、番号だけを当たった語として報告する', () => {
+    expect(violations('// 原因(#12)').map(({ matched }) => matched)).toEqual(['#12']);
+    expect(violations('// 原因(#12)', 'file.js', { allow: [{ pattern: '#12', reason: '試験' }] })).toEqual([]);
+  });
+
   test('日付を確定違反として検出する', () => {
-    expect(violations('// created on 2026-10-02').map(({ ruleId }) => ruleId)).toEqual(['date']);
-    expect(violations('// updated in 2026 年 10 月').map(({ ruleId }) => ruleId)).toEqual(['date']);
+    for (const text of ['created on 2026-10-02', 'updated in 2026 年 10 月', '2026年10月2日に決めた', '2026/10/02 に決めた']) {
+      expect(violations(`// ${text}`).map(({ ruleId }) => ruleId)).toEqual(['date']);
+    }
+  });
+
+  test('チケットに見えるだけの語がある TODO は、チケットなしとして扱う', () => {
+    for (const text of ['TODO: UTF-8 対応', 'TODO: x-1 の値', 'TODO: tracking 方法を決める']) {
+      expect(violations(`// ${text}`).map(({ ruleId }) => ruleId)).toEqual(['todo-no-ticket']);
+    }
   });
 
   test('言語ごとの区切り線を確定違反として検出する', () => {

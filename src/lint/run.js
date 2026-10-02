@@ -9,9 +9,16 @@ import { findViolations } from './rules.js';
 const MAX_GIT_BUFFER = 1 << 30;
 
 function git(repoRoot, args) {
+  // 標準エラーを親へ流さない。失敗を 1 行で返す呼び出し側の出力に、別の行が混ざるためである。
   return execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', ...args], {
     maxBuffer: MAX_GIT_BUFFER,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+}
+
+/** 指定のフォルダーを含むリポジトリのルートを返す。リポジトリの外なら例外を投げる。 */
+export function repositoryRootOf(directory) {
+  return path.resolve(gitText(directory, ['rev-parse', '--show-toplevel']));
 }
 
 function gitText(repoRoot, args) {
@@ -44,8 +51,8 @@ function hasHead(repoRoot) {
   return gitAllowingStatus(repoRoot, ['rev-parse', '--verify', '--quiet', 'HEAD'], [1]) !== null;
 }
 
-function normalizeFilePath(repoRoot, input) {
-  const absolutePath = path.resolve(path.isAbsolute(input) ? input : path.join(repoRoot, input));
+function normalizeFilePath(repoRoot, input, baseDirectory) {
+  const absolutePath = path.resolve(path.isAbsolute(input) ? input : path.join(baseDirectory, input));
   const relativePath = path.relative(repoRoot, absolutePath);
   if (!relativePath || relativePath === '..' || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
     throw new Error(`ファイルはリポジトリの中を指定してください: ${input}`);
@@ -91,10 +98,10 @@ function globSource(pattern) {
 function matchesGlob(relativePath, pattern) {
   const normalizedPattern = pattern.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\//, '').replace(/\/$/, '');
   const hasSlash = normalizedPattern.includes('/');
-  const hasWildcard = /[*?{]/.test(normalizedPattern);
   const source = globSource(normalizedPattern);
+  // パターンがフォルダーに当たるときは、その下のファイルにも当てる(.gitignore と同じ感覚で書けるように)。
   const expression = hasSlash
-    ? new RegExp(`^${source}${hasWildcard ? '' : '(?:/.*)?'}$`)
+    ? new RegExp(`^${source}(?:/.*)?$`)
     : new RegExp(`(?:^|/)${source}(?:/|$)`);
   return expression.test(relativePath);
 }
@@ -146,36 +153,60 @@ function indexSource(repoRoot, relativePath) {
   return decodeUtf8(git(repoRoot, ['cat-file', 'blob', objectId]), `インデックス:${relativePath}`);
 }
 
-function changedPaths(repoRoot, headExists) {
-  const diffFilter = '--diff-filter=ACMRTUXB';
+const DIFF_FILTER = '--diff-filter=ACMRTUXB';
+
+/**
+ * `diff --name-status -z` の出力を、今のパスと比べる元のパスの組にする。
+ * 名前の変更と写しでは、比べる元を変更前のパスにする(新しい名前のまま比べると、既存の違反が全部新しく見える)。
+ */
+function parseNameStatus(fields) {
+  const entries = [];
+  for (let index = 0; index < fields.length; index++) {
+    const status = fields[index];
+    if (status.startsWith('R') || status.startsWith('C')) {
+      entries.push({ path: fields[index + 2], basePath: fields[index + 1] });
+      index += 2;
+    } else {
+      entries.push({ path: fields[index + 1], basePath: fields[index + 1] });
+      index += 1;
+    }
+  }
+  return entries;
+}
+
+function samePathEntries(paths) {
+  return paths.map((filePath) => ({ path: filePath, basePath: filePath }));
+}
+
+function changedEntries(repoRoot, headExists) {
+  const untracked = samePathEntries(gitPaths(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z']));
   if (headExists) {
     return [
-      ...gitPaths(repoRoot, ['diff', '--name-only', '-z', diffFilter, 'HEAD', '--']),
-      ...gitPaths(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z']),
+      ...parseNameStatus(gitPaths(repoRoot, ['diff', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', '--'])),
+      ...untracked,
     ];
   }
   return [
-    ...gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', diffFilter, '--']),
-    ...gitPaths(repoRoot, ['diff', '--name-only', '-z', diffFilter, '--']),
-    ...gitPaths(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z']),
+    ...samePathEntries(gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', DIFF_FILTER, '--'])),
+    ...samePathEntries(gitPaths(repoRoot, ['diff', '--name-only', '-z', DIFF_FILTER, '--'])),
+    ...untracked,
   ];
 }
 
-function stagedPaths(repoRoot, headExists) {
-  const diffFilter = '--diff-filter=ACMRTUXB';
-  const args = ['diff', '--cached', '--name-only', '-z', diffFilter];
-  if (headExists) args.push('HEAD');
-  args.push('--');
-  return gitPaths(repoRoot, args);
+function stagedEntries(repoRoot, headExists) {
+  if (!headExists) {
+    return samePathEntries(gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', DIFF_FILTER, '--']));
+  }
+  return parseNameStatus(gitPaths(repoRoot, ['diff', '--cached', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', '--']));
 }
 
-function filePaths(repoRoot, mode, files, headExists) {
+function fileEntries(repoRoot, mode, files, headExists, baseDirectory) {
   if (mode === 'files') {
     if (!Array.isArray(files) || files.length === 0) throw new Error('lint するファイルを指定してください');
-    return files.map((file) => normalizeFilePath(repoRoot, file));
+    return samePathEntries(files.map((file) => normalizeFilePath(repoRoot, file, baseDirectory)));
   }
-  if (mode === 'changed') return changedPaths(repoRoot, headExists);
-  if (mode === 'staged') return stagedPaths(repoRoot, headExists);
+  if (mode === 'changed') return changedEntries(repoRoot, headExists);
+  if (mode === 'staged') return stagedEntries(repoRoot, headExists);
   throw new Error(`lint の実行モードが不正です: ${mode}`);
 }
 
@@ -183,15 +214,24 @@ function emptyResult() {
   return { files: [], confirmed: 0, review: 0 };
 }
 
-export function lintRepository({ repoRoot = process.cwd(), mode, files = [] }) {
-  const root = path.resolve(repoRoot);
+/**
+ * @param {string} [options.repoRoot] 省くと、カレントディレクトリを含むリポジトリのルートを使う
+ * @param {string} [options.baseDirectory] 相対パスのファイル名を解決する基準。既定は、repoRoot を渡したときはそのルート、省いたときはカレントディレクトリ
+ */
+export function lintRepository({ repoRoot, mode, files = [], baseDirectory }) {
+  const root = repoRoot === undefined ? repositoryRootOf(baseDirectory ?? process.cwd()) : path.resolve(repoRoot);
+  const fileBase = baseDirectory ?? (repoRoot === undefined ? process.cwd() : root);
   const config = loadLintConfig(root);
   if (!config.lint.enabled) return emptyResult();
 
   validateRepositoryRoot(root);
   const headExists = hasHead(root);
   const baselinePaths = headPaths(root, headExists);
-  const paths = [...new Set(filePaths(root, mode, files, headExists))].sort();
+  const basePathOf = new Map();
+  for (const entry of fileEntries(root, mode, files, headExists, fileBase)) {
+    if (!basePathOf.has(entry.path)) basePathOf.set(entry.path, entry.basePath);
+  }
+  const paths = [...basePathOf.keys()].sort();
   const results = [];
   let confirmed = 0;
   let review = 0;
@@ -208,7 +248,7 @@ export function lintRepository({ repoRoot = process.cwd(), mode, files = [] }) {
     const currentSource = mode === 'staged'
       ? indexSource(root, relativePath)
       : worktreeSource(root, relativePath);
-    const baselineSource = headSource(root, relativePath, baselinePaths);
+    const baselineSource = headSource(root, basePathOf.get(relativePath), baselinePaths);
     const options = {
       maxCommentLines: config.maxCommentLines,
       licensePatterns: config.licensePatterns,

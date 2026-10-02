@@ -4,7 +4,7 @@ import { formatReport } from './report.js';
 function parseArgs(argv) {
   const files = [];
   let mode = null;
-  let repoRoot = process.cwd();
+  let repoRoot;
 
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index];
