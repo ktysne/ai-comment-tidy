@@ -240,6 +240,18 @@ describe('lintRepository', () => {
       .toMatchObject({ confirmed: 1, review: 0 });
   });
 
+  test('範囲の外から範囲の中へ移したファイルは、移す前の内容と比べる', () => {
+    const root = makeRepo();
+    write(root, 'old.cpp', '// #42\nint value = 1;\n');
+    commitAll(root);
+    fs.mkdirSync(path.join(root, 'src'));
+    execFileSync('git', ['-C', root, 'mv', 'old.cpp', 'src/new.cpp']);
+
+    const empty = { files: [], confirmed: 0, review: 0 };
+    expect(lintRepository({ repoRoot: root, mode: 'staged-with-worktree', pathspecs: ['src'] })).toEqual(empty);
+    expect(lintRepository({ repoRoot: root, mode: 'changed', pathspecs: ['src'], includeUntracked: false })).toEqual(empty);
+  });
+
   test('コミットが無いリポジトリでも追加ファイルを検査する', () => {
     const root = makeRepo();
     write(root, 'src/first.cpp', '// #321\n');

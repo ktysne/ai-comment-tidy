@@ -479,7 +479,8 @@ Claude Code はフックの JSON を標準入力へ渡す。
 | `git commit <path...>`(`-i` / `--include` なし) | 指定パスに絞った `changed`。未追跡は含めない |
 | `git commit -i <path...>` / `--include` | `staged-with-worktree`。指定パスは作業ツリー、範囲外はインデックスを調べる |
 | 前に `git add <path...>` | `staged-with-worktree`。指定パスでは未追跡も含める |
-| 前に `git add -A` / `--all`、またはルートの `.` | 未追跡を含む `changed` |
+| 前に `git add -A` / `--all`、ルートの `.`、またはワイルドカードか `:` で始まるパス | 未追跡を含む `changed` |
+| `git commit` にワイルドカードか `:` で始まるパス | 未追跡を除いた `changed` |
 | 前に `git add -u` / `--update`、または `git commit -a` / `--all` | 未追跡を除いた `changed` |
 | `git commit` の引数を解釈できない | commit のパスと `-a` を無いものとして先行する `git add` を判定する。該当しなければ `staged` |
 | ほかの形 | `staged` |
@@ -487,6 +488,8 @@ Claude Code はフックの JSON を標準入力へ渡す。
 `changed` は作業ツリーと HEAD、`staged` はインデックスと HEAD、`files` は作業ツリーと HEAD を比べる。
 `staged-with-worktree` は、指定パスの範囲では作業ツリーと HEAD を比べ、範囲外ではインデックスと HEAD を比べる。
 指定範囲のファイルは作業ツリーの内容を使い、インデックスの内容は使わない。
+フックはシェルが展開する前のコマンドを受けるので、ワイルドカードを含むパスからは範囲を推定しない。
+変更の一覧は絞らずに取ってから範囲で絞る。範囲の外にあった元のファイルからの名前の変更を見失わないためである。
 `changed` から未追跡を除く指定は `git commit -a`、`git commit <path...>`、`git add -u` に限り、通常の `lint --changed` は未追跡も含める。
 指定パスは `git add` または `git commit` を実行する位置から解決し、実体のパスをリポジトリルートからの相対パスに直して pathspec に渡す。
 ルートの外を指すパスがあれば `staged` を調べる。

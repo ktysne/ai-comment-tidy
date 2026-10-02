@@ -188,36 +188,40 @@ function samePathEntries(paths) {
   return paths.map((filePath) => ({ path: filePath, basePath: filePath }));
 }
 
+function pathMatchesPathspec(relativePath, pathspec) {
+  const normalized = pathspec.replace(/\\/g, '/').replace(/\/+$/, '');
+  return normalized === '' || normalized === '.' || relativePath === normalized
+    || relativePath.startsWith(`${normalized}/`);
+}
+
+// 一覧は絞らずに取ってから範囲で絞る。範囲の外にあった元のファイルとの名前の変更を見つけるため。
+function withinPathspecs(entries, pathspecs) {
+  if (pathspecs.length === 0) return entries;
+  return entries.filter(({ path: filePath }) => pathspecs.some((pathspec) => pathMatchesPathspec(filePath, pathspec)));
+}
+
 function changedEntries(repoRoot, headExists, includeUntracked, pathspecs = []) {
-  const pathArguments = ['--', ...pathspecs];
   const untracked = includeUntracked
-    ? samePathEntries(gitPaths(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z', ...pathArguments]))
+    ? samePathEntries(gitPaths(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z', '--', ...pathspecs]))
     : [];
   if (headExists) {
     return [
-      ...parseNameStatus(gitPaths(repoRoot, ['diff', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', ...pathArguments])),
+      ...withinPathspecs(parseNameStatus(gitPaths(repoRoot, ['diff', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', '--'])), pathspecs),
       ...untracked,
     ];
   }
   return [
-    ...samePathEntries(gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', DIFF_FILTER, ...pathArguments])),
-    ...samePathEntries(gitPaths(repoRoot, ['diff', '--name-only', '-z', DIFF_FILTER, ...pathArguments])),
+    ...withinPathspecs(samePathEntries(gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', DIFF_FILTER, '--'])), pathspecs),
+    ...withinPathspecs(samePathEntries(gitPaths(repoRoot, ['diff', '--name-only', '-z', DIFF_FILTER, '--'])), pathspecs),
     ...untracked,
   ];
 }
 
 function stagedEntries(repoRoot, headExists, pathspecs = []) {
-  const pathArguments = ['--', ...pathspecs];
   if (!headExists) {
-    return samePathEntries(gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', DIFF_FILTER, ...pathArguments]));
+    return withinPathspecs(samePathEntries(gitPaths(repoRoot, ['diff', '--cached', '--name-only', '-z', DIFF_FILTER, '--'])), pathspecs);
   }
-  return parseNameStatus(gitPaths(repoRoot, ['diff', '--cached', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', ...pathArguments]));
-}
-
-function pathMatchesPathspec(relativePath, pathspec) {
-  const normalized = pathspec.replace(/\\/g, '/').replace(/\/+$/, '');
-  return normalized === '' || normalized === '.' || relativePath === normalized
-    || relativePath.startsWith(`${normalized}/`);
+  return withinPathspecs(parseNameStatus(gitPaths(repoRoot, ['diff', '--cached', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', '--'])), pathspecs);
 }
 
 function stagedWithWorktreeEntries(repoRoot, headExists, includeUntracked, pathspecs) {
@@ -255,8 +259,8 @@ function fileEntries(repoRoot, mode, files, headExists, baseDirectory, includeUn
  * 作業ツリーから消えたファイルの違反を集める。
  * ステージしていない名前の変更は「削除と未追跡の追加」に見えるので、新しいファイルの比べる元にこれを使う。
  */
-function deletedFileViolations(repoRoot, baselinePaths, options, pathspecs) {
-  const deleted = gitPaths(repoRoot, ['diff', '--name-only', '-z', '--diff-filter=D', 'HEAD', '--', ...pathspecs]);
+function deletedFileViolations(repoRoot, baselinePaths, options) {
+  const deleted = gitPaths(repoRoot, ['diff', '--name-only', '-z', '--diff-filter=D', 'HEAD', '--']);
   return deleted
     .filter((deletedPath) => languageOf(deletedPath))
     .flatMap((deletedPath) => findViolations(deletedPath, headSource(repoRoot, deletedPath, baselinePaths), options));
@@ -312,7 +316,7 @@ export function lintRepository({ repoRoot, mode, files = [], baseDirectory, incl
     const currentViolations = findViolations(relativePath, currentSource, options);
     let baselineViolations;
     if ((mode === 'changed' || entry.source === 'worktree') && headExists && !baselinePaths.has(basePath)) {
-      movedBaseline ??= deletedFileViolations(root, baselinePaths, options, pathspecs);
+      movedBaseline ??= deletedFileViolations(root, baselinePaths, options);
       baselineViolations = movedBaseline;
     } else {
       baselineViolations = findViolations(relativePath, headSource(root, basePath, baselinePaths), options);

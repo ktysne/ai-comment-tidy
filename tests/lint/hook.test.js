@@ -293,6 +293,9 @@ describe('detectCommit', () => {
     }],
     ['git add --unknown && git commit -m x', { directory: null, mode: 'staged' }],
     ['git status\ngit commit -m x', { directory: null, mode: 'staged' }],
+    ['git add src/*.cpp && git commit -m x', { directory: null, mode: 'changed' }],
+    ['git add ":(glob)src/**" && git commit -m x', { directory: null, mode: 'changed' }],
+    ['git commit src/*.cpp -m x', { directory: null, mode: 'changed', includeUntracked: false }],
   ])('コミットを作る形を判定する: %s', (command, expected) => {
     expect(detectCommit(command)).toEqual(expected);
   });

@@ -395,6 +395,11 @@ function parseCommitArguments(args) {
   return { all, include, paths };
 }
 
+// フックはシェルが展開する前の文字列を受けるので、ワイルドカードや pathspec の印を含むパスは範囲を推定しない。
+function isPatternPath(argument) {
+  return argument.startsWith(':') || ['*', '?', '['].some((character) => argument.includes(character));
+}
+
 function parseAddArguments(args) {
   const paths = [];
   let all = false;
@@ -418,12 +423,11 @@ function parseAddArguments(args) {
       continue;
     }
     if (argument.startsWith('-')) return null;
-    if (argument.startsWith(':') || ['*', '?', '[', ']'].some((character) => argument.includes(character))) return null;
     paths.push(argument);
   }
   if (all && update) return null;
   if (update) return { kind: 'update' };
-  if (all) return { kind: 'all' };
+  if (all || paths.some(isPatternPath)) return { kind: 'all' };
   return paths.length > 0 ? { kind: 'paths', paths } : null;
 }
 
@@ -450,6 +454,9 @@ export function detectCommit(command, baseDirectory = process.cwd()) {
   const commit = parsed[commitIndex];
   const commitArguments = parseCommitArguments(commit.args);
   const pathsFrom = (paths, directory) => paths.map((file) => path.resolve(directory, file));
+  if (commitArguments?.paths.some(isPatternPath)) {
+    return { directory: commit.directory, mode: 'changed', includeUntracked: false };
+  }
   if (commitArguments?.paths.length > 0) {
     return {
       directory: commit.directory,
