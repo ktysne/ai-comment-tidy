@@ -37,13 +37,15 @@ async function runHook(hook, input, extraIo = {}) {
   return { code, ...result };
 }
 
-function editInput(root, filePath, toolInput, toolName = 'Edit') {
-  return JSON.stringify({
+function editInput(root, filePath, toolInput, toolName = 'Edit', toolResponse) {
+  const value = {
     hook_event_name: 'PostToolUse',
     tool_name: toolName,
     tool_input: { file_path: filePath, ...toolInput },
     cwd: root,
-  });
+  };
+  if (toolResponse !== undefined) value.tool_response = toolResponse;
+  return JSON.stringify(value);
 }
 
 function commitInput(root, command, toolName = 'Bash') {
@@ -105,6 +107,72 @@ describe('lint --hook post-edit', () => {
 
     expect(result.code).toBe(2);
     expect(result.stderr[0]).toContain('issue-ref');
+  });
+
+  test('structuredPatch がある Edit は指定された行だけを調べる', async () => {
+    const root = makeRepo();
+    writeSource(root, '// #12\nint value = 1;\n// #34\n');
+
+    const result = await runHook('post-edit', editInput(
+      root,
+      'source.cpp',
+      { new_string: '' },
+      'Edit',
+      { structuredPatch: [{ newStart: 3, newLines: 1 }] },
+    ));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('#34');
+    expect(result.stderr[0]).not.toContain('#12');
+  });
+
+  test('structuredPatch の newLines が 0 なら newStart の行を調べる', async () => {
+    const root = makeRepo();
+    writeSource(root, '// #12\nint value = 1;\n// #34\n');
+
+    const result = await runHook('post-edit', editInput(
+      root,
+      'source.cpp',
+      { new_string: 'not present' },
+      'Edit',
+      { structuredPatch: [{ newStart: 3, newLines: 0 }] },
+    ));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('#34');
+    expect(result.stderr[0]).not.toContain('#12');
+  });
+
+  test('更新 Write は structuredPatch の範囲だけを調べる', async () => {
+    const root = makeRepo();
+    writeSource(root, 'int value = 1;\n// #12\n// #34\n');
+
+    const result = await runHook('post-edit', editInput(
+      root,
+      'source.cpp',
+      { content: 'int value = 1;\n// #12\n// #34\n' },
+      'Write',
+      { type: 'update', structuredPatch: [{ newStart: 2, newLines: 1 }] },
+    ));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('#12');
+    expect(result.stderr[0]).not.toContain('#34');
+  });
+
+  test('structuredPatch の無い Edit で new_string が空か見つからなければ何も報告しない', async () => {
+    const emptyRoot = makeRepo();
+    writeSource(emptyRoot, '// #12\n');
+    const empty = await runHook('post-edit', editInput(emptyRoot, 'source.cpp', { new_string: '' }));
+
+    const missingRoot = makeRepo();
+    writeSource(missingRoot, '// #34\n');
+    const missing = await runHook('post-edit', editInput(missingRoot, 'source.cpp', { new_string: 'not present' }));
+
+    expect(empty.code).toBe(0);
+    expect(empty.stderr).toEqual([]);
+    expect(missing.code).toBe(0);
+    expect(missing.stderr).toEqual([]);
   });
 
   test('replace_all では一致した複数の位置を調べる', async () => {
@@ -172,10 +240,35 @@ describe('detectCommit', () => {
     ['git -c user.name=x commit -m x', { directory: null, mode: 'staged' }],
     ['git --no-pager -C sub commit -m x', { directory: 'sub', mode: 'staged' }],
     ['cd sub && git commit -m x', { directory: 'sub', mode: 'staged' }],
-    ['cd "D:\\work dir" && git commit -m x', { directory: 'D:\\work dir', mode: 'staged' }],
+    ['cd repo && cd sub && git commit -m x', { directory: path.join('repo', 'sub'), mode: 'staged' }],
+    ['Set-Location repo && sl sub && git commit -m x', {
+      directory: path.join('repo', 'sub'), mode: 'staged',
+    }],
+    ['pushd repo && git commit -m x', { directory: 'repo', mode: 'staged' }],
+    ['(cd sub && git commit -m x)', { directory: 'sub', mode: 'staged' }],
+    ['cd "D:\\work dir" && git commit -m x', {
+      directory: path.relative(process.cwd(), 'D:\\work dir'), mode: 'staged',
+    }],
+    ['NAME=value git commit -m x', { directory: null, mode: 'staged' }],
+    ['git -P commit -m x', { directory: null, mode: 'staged' }],
     ['git add -A && git commit -m x', { directory: null, mode: 'changed' }],
-    ['git commit -am x', { directory: null, mode: 'changed' }],
-    ['git commit --all', { directory: null, mode: 'changed' }],
+    ['git add --all && git commit -m x', { directory: null, mode: 'changed' }],
+    ['git add -u && git commit -m x', { directory: null, mode: 'changed', includeUntracked: false }],
+    ['git add --update && git commit -m x', { directory: null, mode: 'changed', includeUntracked: false }],
+    ['git commit -am x', { directory: null, mode: 'changed', includeUntracked: false }],
+    ['git commit --all', { directory: null, mode: 'changed', includeUntracked: false }],
+    ['git add src/file.cpp && git commit -m x', {
+      directory: null,
+      mode: 'staged-and-files',
+      files: [path.resolve('src/file.cpp')],
+    }],
+    ['cd repo && cd sub && git add file.cpp && git commit -m x', {
+      directory: path.join('repo', 'sub'),
+      mode: 'staged-and-files',
+      files: [path.resolve('repo', 'sub', 'file.cpp')],
+    }],
+    ['git commit -- src/file.cpp', { directory: null, mode: 'files', files: [path.resolve('src/file.cpp')] }],
+    ['git add --unknown && git commit -m x', { directory: null, mode: 'staged' }],
     ['git status\ngit commit -m x', { directory: null, mode: 'staged' }],
   ])('コミットを作る形を判定する: %s', (command, expected) => {
     expect(detectCommit(command)).toEqual(expected);
@@ -187,6 +280,10 @@ describe('detectCommit', () => {
     'git log --grep commit',
     'git status',
     'echo "git commit"',
+    'cat <<WORD\ngit commit -m fake\nWORD',
+    "cat <<'WORD'\ngit commit -m fake\nWORD",
+    'cat <<"WORD"\ngit commit -m fake\nWORD',
+    'cat <<-WORD\n\tgit commit -m fake\n\tWORD',
     '',
   ])('コミットでない形を判定しない: %s', (command) => {
     expect(detectCommit(command)).toBeNull();
@@ -254,6 +351,82 @@ describe('lint --hook pre-commit', () => {
 
     expect(result.code).toBe(2);
     expect(result.stderr[0]).toContain('#42');
+  });
+
+  test.each([
+    'git commit -a -m x',
+    'git add -u && git commit -m x',
+  ])('%s は追跡済みの変更だけを調べる', async (command) => {
+    const root = makeRepo();
+    writeSource(root, '// #42\n');
+    fs.writeFileSync(path.join(root, 'untracked.cpp'), '// #99\n', 'utf8');
+
+    const result = await runHook('pre-commit', commitInput(root, command));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('#42');
+    expect(result.stderr[0]).not.toContain('#99');
+  });
+
+  test('git add のパスはステージ結果と合わせ、同じファイルには files の結果を使う', async () => {
+    const root = makeRepo();
+    writeSource(root, '// #42\n');
+    execFileSync('git', ['-C', root, 'add', '--', 'source.cpp']);
+    writeSource(root, '// safe\n');
+
+    const result = await runHook('pre-commit', commitInput(root, 'git add source.cpp && git commit -m x'));
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toEqual([]);
+  });
+
+  test('git add のパス指定後にステージと files の違反を合わせて数える', async () => {
+    const root = makeRepo();
+    writeSource(root, '// TODO finish later\n');
+    execFileSync('git', ['-C', root, 'add', '--', 'source.cpp']);
+    fs.writeFileSync(path.join(root, 'selected.cpp'), '// #99\n', 'utf8');
+
+    const result = await runHook('pre-commit', commitInput(root, 'git add selected.cpp && git commit -m x'));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('TODO');
+    expect(result.stderr[0]).toContain('#99');
+  });
+
+  test('リポジトリのルートで git add . を使うと未追跡ファイルも調べる', async () => {
+    const root = makeRepo();
+    fs.writeFileSync(path.join(root, 'untracked.cpp'), '// #99\n', 'utf8');
+
+    const result = await runHook('pre-commit', commitInput(root, 'git add . && git commit -m x'));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('#99');
+  });
+
+  test('サブフォルダーで git add . を使うとその範囲だけを調べる', async () => {
+    const root = makeRepo();
+    fs.mkdirSync(path.join(root, 'sub'));
+    fs.writeFileSync(path.join(root, 'sub', 'source.cpp'), '// #42\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'outside.cpp'), '// #99\n', 'utf8');
+
+    const result = await runHook('pre-commit', commitInput(root, 'cd sub && git add . && git commit -m x'));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('#42');
+    expect(result.stderr[0]).not.toContain('#99');
+  });
+
+  test('git commit のパス指定があると指定ファイルだけを調べる', async () => {
+    const root = makeRepo();
+    writeSource(root, '// #42\n');
+    fs.writeFileSync(path.join(root, 'other.cpp'), '// #99\n', 'utf8');
+    execFileSync('git', ['-C', root, 'add', '--all']);
+
+    const result = await runHook('pre-commit', commitInput(root, 'git commit -- source.cpp'));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('#42');
+    expect(result.stderr[0]).not.toContain('#99');
   });
 
   test('リポジトリ外と壊れた JSON はコミットを止めない', async () => {

@@ -18,6 +18,14 @@ function normalizeNewlines(text) {
   return text.replace(/\r\n?/g, '\n');
 }
 
+function samePath(left, right) {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
 function lineRangeAt(source, start, length) {
   const startLine = source.slice(0, start).split('\n').length;
   const end = start + length;
@@ -26,15 +34,29 @@ function lineRangeAt(source, start, length) {
   return { startLine, endLine: Math.max(startLine, endLine) };
 }
 
-function rangesForEdit(source, toolName, toolInput) {
-  if (toolName === 'Write') {
-    return [{ startLine: 1, endLine: Math.max(1, normalizeNewlines(source).split('\n').length) }];
+function fullFileRange(source) {
+  return [{ startLine: 1, endLine: Math.max(1, normalizeNewlines(source).split('\n').length) }];
+}
+
+function rangesFromStructuredPatch(structuredPatch) {
+  return structuredPatch
+    .filter((hunk) => isRecord(hunk)
+      && Number.isInteger(hunk.newStart) && Number.isInteger(hunk.newLines))
+    .map(({ newStart, newLines }) => ({
+      startLine: newStart,
+      endLine: newLines === 0 ? newStart : newStart + newLines - 1,
+    }));
+}
+
+function rangesForEdit(source, toolName, toolInput, toolResponse) {
+  if (Array.isArray(toolResponse?.structuredPatch)
+      && (toolName === 'Edit' || (toolName === 'Write' && toolResponse.type === 'update'))) {
+    return rangesFromStructuredPatch(toolResponse.structuredPatch);
   }
+  if (toolName === 'Write') return fullFileRange(source);
 
   const replacement = normalizeNewlines(toolInput.new_string);
-  if (replacement.length === 0) {
-    return [{ startLine: 1, endLine: Math.max(1, normalizeNewlines(source).split('\n').length) }];
-  }
+  if (replacement.length === 0) return [];
 
   const normalizedSource = normalizeNewlines(source);
   const ranges = [];
@@ -45,9 +67,7 @@ function rangesForEdit(source, toolName, toolInput) {
     index = normalizedSource.indexOf(replacement, index + replacement.length);
   }
 
-  return ranges.length > 0
-    ? ranges
-    : [{ startLine: 1, endLine: Math.max(1, normalizedSource.split('\n').length) }];
+  return ranges;
 }
 
 function filterResult(result, ranges) {
@@ -101,10 +121,69 @@ function validHookInput(value, eventName, toolNames) {
   if (!value || value.hook_event_name !== eventName || !toolNames.includes(value.tool_name)) return null;
   if (!isRecord(value.tool_input)) return null;
   if (value.cwd !== undefined && typeof value.cwd !== 'string') return null;
-  return { toolInput: value.tool_input, toolName: value.tool_name, cwd: value.cwd ?? process.cwd() };
+  return {
+    toolInput: value.tool_input,
+    toolName: value.tool_name,
+    toolResponse: isRecord(value.tool_response) ? value.tool_response : undefined,
+    cwd: value.cwd ?? process.cwd(),
+  };
+}
+
+function heredocDelimiters(line) {
+  const delimiters = [];
+  let quote = null;
+  for (let index = 0; index < line.length; index++) {
+    const character = line[index];
+    if (quote !== null) {
+      if (character === quote) quote = null;
+      else if (character === '\\') index++;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === '#' && (index === 0 || /\s/.test(line[index - 1]))) break;
+    if (character !== '<' || line[index + 1] !== '<' || line[index + 2] === '<') continue;
+
+    let cursor = index + 2;
+    const stripTabs = line[cursor] === '-';
+    if (stripTabs) cursor++;
+    while (line[cursor] === ' ' || line[cursor] === '\t') cursor++;
+    const delimiterQuote = line[cursor] === '"' || line[cursor] === "'" ? line[cursor++] : null;
+    const start = cursor;
+    if (delimiterQuote !== null) {
+      while (cursor < line.length && line[cursor] !== delimiterQuote) cursor++;
+    } else {
+      while (cursor < line.length && !/[\s;&|<>]/.test(line[cursor])) cursor++;
+    }
+    if (cursor > start) delimiters.push({ value: line.slice(start, cursor), stripTabs });
+    if (delimiterQuote !== null && line[cursor] === delimiterQuote) cursor++;
+    index = cursor - 1;
+  }
+  return delimiters;
+}
+
+function withoutHeredocBodies(command) {
+  const lines = command.match(/[^\n]*(?:\n|$)/g) ?? [];
+  const output = [];
+  let pending = [];
+  for (const line of lines) {
+    if (line === '') continue;
+    const content = (line.endsWith('\n') ? line.slice(0, -1) : line).replace(/\r$/, '');
+    if (pending.length > 0) {
+      const delimiter = pending[0];
+      if ((delimiter.stripTabs ? content.replace(/^\t+/, '') : content) === delimiter.value) pending.shift();
+      continue;
+    }
+    output.push(line);
+    pending = heredocDelimiters(content);
+  }
+  return output.join('');
 }
 
 function tokenizeCommands(command) {
+  command = withoutHeredocBodies(command);
   const commands = [];
   let tokens = [];
   let token = '';
@@ -144,7 +223,8 @@ function tokenizeCommands(command) {
       token += next;
       tokenStarted = true;
       index++;
-    } else if (character === ';' || character === '&' || character === '|' || character === '\n') {
+    } else if (character === ';' || character === '&' || character === '|'
+        || character === '\n' || character === '(' || character === ')') {
       pushCommand();
       if ((character === '&' || character === '|') && next === character) index++;
     } else if (/\s/.test(character)) {
@@ -162,14 +242,71 @@ const GLOBAL_OPTIONS_WITH_VALUE = new Set([
   '-C', '-c', '--config-env', '--exec-path', '--git-dir', '--namespace', '--super-prefix', '--work-tree',
 ]);
 const COMMIT_OPTIONS_WITH_VALUE = new Set([
-  '-C', '-c', '-F', '-m', '--file', '--fixup', '--message', '--reedit-message', '--reuse-message', '--squash',
+  '-C', '-c', '-F', '-m', '--author', '--cleanup', '--date', '--file', '--fixup', '--message', '--pathspec-from-file',
+  '--reedit-message', '--reuse-message', '--squash', '--template',
 ]);
 
-function parseGitCommand(tokens) {
+const COMMIT_OPTIONS_WITHOUT_VALUE = new Set([
+  '--all', '--allow-empty', '--allow-empty-message', '--amend', '--branch', '--dry-run', '--edit', '--no-edit',
+  '--include', '--interactive', '--no-verify', '--only', '--patch', '--porcelain', '--quiet', '--reset-author',
+  '--short', '--signoff', '--status', '--no-status', '--verbose', '--no-post-rewrite', '--no-gpg-sign', '--gpg-sign',
+]);
+const COMMIT_SHORT_OPTIONS = new Set(['a', 'e', 'i', 'n', 'o', 'p', 'q', 's', 'v', 'C', 'c', 'F', 'm', 'S']);
+
+function isEnvironmentAssignment(token) {
+  return /^[A-Za-z_][A-Za-z0-9_]*=/.test(token);
+}
+
+function commandTokens(tokens) {
+  let index = 0;
+  while (isEnvironmentAssignment(tokens[index] ?? '')) index++;
+  return tokens.slice(index);
+}
+
+function displayDirectory(baseDirectory, absoluteDirectory, originalPath) {
+  if (path.isAbsolute(originalPath)) return absoluteDirectory;
+  return path.relative(baseDirectory, absoluteDirectory) || '.';
+}
+
+function parseLocationCommand(rawTokens, baseDirectory, currentDirectory) {
+  const tokens = commandTokens(rawTokens);
+  const command = tokens[0]?.toLowerCase();
+  if (!['cd', 'set-location', 'sl', 'pushd'].includes(command)) return null;
+
+  let target = null;
+  for (let index = 1; index < tokens.length; index++) {
+    const argument = tokens[index];
+    if (argument === '--') {
+      target = tokens[index + 1] ?? null;
+      break;
+    }
+    if (['-path', '-literalpath'].includes(argument.toLowerCase())) {
+      target = tokens[index + 1] ?? null;
+      break;
+    }
+    if (!argument.startsWith('-')) {
+      target = argument;
+      break;
+    }
+  }
+  if (target === null || target === '-') return { matched: false };
+  const absoluteDirectory = path.resolve(currentDirectory, target);
+  return {
+    matched: true,
+    absoluteDirectory,
+    directory: displayDirectory(baseDirectory, absoluteDirectory, target),
+  };
+}
+
+function parseGitCommand(rawTokens, baseDirectory, currentDirectory) {
+  const tokens = commandTokens(rawTokens);
   const executable = tokens[0]?.split(/[\\/]/).at(-1)?.toLowerCase();
   if (executable !== 'git' && executable !== 'git.exe' && executable !== 'git.cmd') return null;
 
-  let directory = null;
+  let absoluteDirectory = currentDirectory;
+  let directory = currentDirectory === baseDirectory
+    ? null
+    : path.relative(baseDirectory, currentDirectory) || '.';
   let index = 1;
   while (index < tokens.length) {
     const option = tokens[index];
@@ -177,12 +314,19 @@ function parseGitCommand(tokens) {
     if (GLOBAL_OPTIONS_WITH_VALUE.has(option)) {
       const value = tokens[index + 1];
       if (value === undefined) return null;
-      if (option === '-C') directory = value;
+      if (option === '-C') {
+        absoluteDirectory = path.resolve(absoluteDirectory, value);
+        directory = displayDirectory(baseDirectory, absoluteDirectory, value);
+      }
       index += 2;
       continue;
     }
     if ((option.startsWith('-C') || option.startsWith('-c')) && option.length > 2) {
-      if (option.startsWith('-C')) directory = option.slice(2);
+      if (option.startsWith('-C')) {
+        const value = option.slice(2);
+        absoluteDirectory = path.resolve(absoluteDirectory, value);
+        directory = displayDirectory(baseDirectory, absoluteDirectory, value);
+      }
       index++;
       continue;
     }
@@ -195,59 +339,155 @@ function parseGitCommand(tokens) {
     if (option.startsWith('-')) {
       if (!['--bare', '--glob-pathspecs', '--help', '--icase-pathspecs', '--literal-pathspecs', '--no-advice',
         '--no-lazy-fetch', '--no-optional-locks', '--no-pager', '--no-replace-objects', '--noglob-pathspecs',
-        '--paginate', '--version', '-p'].includes(option)) return null;
+        '--paginate', '--version', '-P', '-p'].includes(option)) return null;
       index++;
       continue;
     }
-    return { subcommand: option, args: tokens.slice(index + 1), directory };
+    return {
+      subcommand: option,
+      args: tokens.slice(index + 1),
+      directory,
+      absoluteDirectory,
+    };
   }
   return null;
 }
 
-function commitUsesAll(args) {
+function parseCommitArguments(args) {
+  const paths = [];
+  let all = false;
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
-    if (argument === '--') break;
-    if (argument === '--all') return true;
+    if (argument === '--') {
+      paths.push(...args.slice(index + 1));
+      break;
+    }
+    const longOption = argument.split('=', 1)[0];
+    if (longOption === '--all' && argument === '--all') {
+      all = true;
+      continue;
+    }
     if (COMMIT_OPTIONS_WITH_VALUE.has(argument)) {
+      if (args[index + 1] === undefined) return null;
       index++;
       continue;
     }
-    if (argument.startsWith('--')) continue;
+    if (argument.startsWith('--')) {
+      if (argument.includes('=') && COMMIT_OPTIONS_WITH_VALUE.has(longOption)) continue;
+      if (COMMIT_OPTIONS_WITHOUT_VALUE.has(argument)) continue;
+      return null;
+    }
     if (argument.startsWith('-')) {
       for (const option of argument.slice(1)) {
-        if (option === 'a') return true;
-        if ('CcFfm'.includes(option)) break;
+        if (!COMMIT_SHORT_OPTIONS.has(option)) return null;
+        if (option === 'a') all = true;
+        if (option === 'S') break;
+        if ('CcFm'.includes(option)) {
+          if (argument.at(-1) === option) {
+            if (args[index + 1] === undefined) return null;
+            index++;
+          }
+          break;
+        }
       }
+      continue;
     }
+    paths.push(argument);
   }
-  return false;
+  return { all, paths };
 }
 
-export function detectCommit(command) {
+function parseAddArguments(args) {
+  const paths = [];
+  let all = false;
+  let update = false;
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === '--') {
+      paths.push(...args.slice(index + 1));
+      break;
+    }
+    if (argument === '-A' || argument === '--all') {
+      all = true;
+      continue;
+    }
+    if (argument === '-u' || argument === '--update') {
+      update = true;
+      continue;
+    }
+    if (['--dry-run', '--force', '--ignore-errors', '--ignore-missing', '--intent-to-add', '--refresh', '--verbose'].includes(argument)) {
+      if (argument === '--intent-to-add') return null;
+      continue;
+    }
+    if (argument.startsWith('-')) return null;
+    if (argument.startsWith(':') || ['*', '?', '[', ']'].some((character) => argument.includes(character))) return null;
+    paths.push(argument);
+  }
+  if (all && update) return null;
+  if (update) return { kind: 'update' };
+  if (all) return { kind: 'all' };
+  return paths.length > 0 ? { kind: 'paths', paths } : null;
+}
+
+export function detectCommit(command, baseDirectory = process.cwd()) {
   if (typeof command !== 'string' || command.trim() === '') return null;
+  const absoluteBaseDirectory = path.resolve(baseDirectory);
   const commands = tokenizeCommands(command);
-  const parsed = commands.map(parseGitCommand);
+  let currentDirectory = absoluteBaseDirectory;
+  let leading = true;
+  const parsed = commands.map((tokens) => {
+    if (leading) {
+      const location = parseLocationCommand(tokens, absoluteBaseDirectory, currentDirectory);
+      if (location?.matched) {
+        currentDirectory = location.absoluteDirectory;
+        return null;
+      }
+      if (commandTokens(tokens).length > 0) leading = false;
+    }
+    return parseGitCommand(tokens, absoluteBaseDirectory, currentDirectory);
+  });
   const commitIndex = parsed.findIndex((item) => item?.subcommand === 'commit');
   if (commitIndex < 0) return null;
 
-  let directory = null;
-  for (const tokens of commands) {
-    if (tokens[0] === 'cd' && typeof tokens[1] === 'string') {
-      directory = tokens[1];
-    } else {
-      break;
-    }
-  }
   const commit = parsed[commitIndex];
-  const stagesChanges = parsed.slice(0, commitIndex).some((item) => item?.subcommand === 'add');
+  const commitArguments = parseCommitArguments(commit.args);
+  if (!commitArguments) return { directory: commit.directory, mode: 'staged' };
+  const filesFrom = (paths, directory) => paths.map((file) => path.resolve(directory, file));
+  if (commitArguments.paths.length > 0) {
+    return {
+      directory: commit.directory,
+      mode: 'files',
+      files: filesFrom(commitArguments.paths, commit.absoluteDirectory),
+    };
+  }
+  if (commitArguments.all) return { directory: commit.directory, mode: 'changed', includeUntracked: false };
+
+  const additions = parsed.slice(0, commitIndex).filter((item) => item?.subcommand === 'add');
+  if (additions.length === 0) return { directory: commit.directory, mode: 'staged' };
+  const parsedAdditions = additions.map((addition) => ({
+    addition,
+    selection: parseAddArguments(addition.args),
+  }));
+  if (parsedAdditions.some(({ selection }) => selection === null)) {
+    return { directory: commit.directory, mode: 'staged' };
+  }
+  if (parsedAdditions.some(({ selection }) => selection.kind === 'all')) {
+    return { directory: commit.directory, mode: 'changed' };
+  }
+  if (parsedAdditions.some(({ selection }) => selection.kind === 'update')) {
+    return { directory: commit.directory, mode: 'changed', includeUntracked: false };
+  }
+  const files = parsedAdditions.flatMap(({ addition, selection }) => (
+    filesFrom(selection.paths, addition.absoluteDirectory)
+  ));
   return {
-    directory: commit.directory ?? directory,
-    mode: stagesChanges || commitUsesAll(commit.args) ? 'changed' : 'staged',
+    directory: commit.directory,
+    mode: 'staged-and-files',
+    files: [...new Set(files)],
   };
 }
 
-function runPostEdit({ toolInput, toolName, cwd }, deps) {
+function runPostEdit({ toolInput, toolName, toolResponse, cwd }, deps) {
   const filePath = toolInput.file_path;
   if (typeof filePath !== 'string') return 0;
   if (toolName === 'Edit'
@@ -267,7 +507,7 @@ function runPostEdit({ toolInput, toolName, cwd }, deps) {
     files: [absolutePath],
     baseDirectory: cwd,
   });
-  const report = formatReport(filterResult(result, rangesForEdit(source, toolName, toolInput)));
+  const report = formatReport(filterResult(result, rangesForEdit(source, toolName, toolInput, toolResponse)));
   if (!report) return 0;
   deps.stderr(`${POST_EDIT_PREFIX}\n${report}`);
   return 2;
@@ -275,13 +515,49 @@ function runPostEdit({ toolInput, toolName, cwd }, deps) {
 
 function runPreCommit({ toolInput, cwd }, deps) {
   if (typeof toolInput.command !== 'string') return 0;
-  const commit = detectCommit(toolInput.command);
+  const commit = detectCommit(toolInput.command, cwd);
   if (!commit) return 0;
   const directory = commit.directory === null ? cwd : path.resolve(cwd, commit.directory);
   const repoRoot = repositoryRootOrNull(directory, deps.repositoryRootOf);
   if (repoRoot === null) return 0;
 
-  const result = deps.lintRepository({ repoRoot, mode: commit.mode });
+  const files = commit.files ?? [];
+  const mode = commit.mode === 'staged-and-files'
+      && files.some((file) => samePath(file, repoRoot))
+    ? 'changed'
+    : commit.mode;
+  let result;
+  if (mode === 'staged-and-files') {
+    const staged = deps.lintRepository({ repoRoot, mode: 'staged' });
+    const selected = deps.lintRepository({ repoRoot, mode: 'files', files, baseDirectory: cwd });
+    const mergedFiles = [
+      ...staged.files.filter(({ path: filePath }) => {
+        const absolutePath = path.join(repoRoot, ...filePath.split('/'));
+        return !files.some((file) => {
+          const targetPath = path.resolve(file);
+          if (samePath(targetPath, absolutePath)) return true;
+          const relativePath = path.relative(targetPath, absolutePath);
+          return relativePath !== '' && relativePath !== '..'
+            && !relativePath.startsWith(`..${path.sep}`) && !path.isAbsolute(relativePath)
+            && fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory();
+        });
+      }),
+      ...selected.files,
+    ];
+    const violations = mergedFiles.flatMap(({ violations: fileViolations }) => fileViolations);
+    result = {
+      files: mergedFiles,
+      confirmed: violations.filter(({ severity }) => severity === 'confirmed').length,
+      review: violations.filter(({ severity }) => severity === 'review').length,
+    };
+  } else {
+    result = deps.lintRepository({
+      repoRoot,
+      mode,
+      ...(mode === 'files' ? { files, baseDirectory: cwd } : {}),
+      ...(commit.includeUntracked === false ? { includeUntracked: false } : {}),
+    });
+  }
   const report = formatReport(result);
   if (!report) return 0;
   if (result.confirmed > 0) {

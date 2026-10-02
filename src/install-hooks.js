@@ -8,6 +8,7 @@ const EVENTS = [
   { name: 'PostToolUse', matcher: 'Edit|Write', hook: 'post-edit' },
   { name: 'PreToolUse', matcher: 'Bash|PowerShell', hook: 'pre-commit' },
 ];
+const NODE_PATH_NOTE = 'フックには Node.js の絶対パスを記録するため、Node.js を入れ替えた後は install-hooks を実行し直してください。';
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -44,7 +45,7 @@ function readSettings(settingsPath) {
   if (!fs.existsSync(settingsPath)) return { settings: {}, exists: false };
   let settings;
   try {
-    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8').replace(/^\uFEFF/, ''));
   } catch (error) {
     const detail = error instanceof Error ? error.message.replace(/[\r\n]+/g, ' ') : 'JSON を解析できません';
     throw new Error(`設定ファイルを JSON として読めません: ${settingsPath} (${detail})`, { cause: error });
@@ -72,15 +73,32 @@ function ownsCommand(hook) {
     && (hook.command.includes('lint --hook post-edit') || hook.command.includes('lint --hook pre-commit'));
 }
 
-function removeEmptyGroups(eventHooks) {
+function removeEmptyGroups(eventHooks, emptiedGroups) {
   for (let index = eventHooks.length - 1; index >= 0; index--) {
     const group = eventHooks[index];
-    if (!isRecord(group) || !Array.isArray(group.hooks) || group.hooks.length > 0) continue;
+    if (!emptiedGroups.has(group) || !isRecord(group) || !Array.isArray(group.hooks) || group.hooks.length > 0) continue;
     delete group.hooks;
     if (Object.keys(group).length === 0 || Object.keys(group).every((key) => key === 'matcher')) {
       eventHooks.splice(index, 1);
     }
   }
+}
+
+function removeHooks(eventHooks, shouldRemove, keepHook = null) {
+  const emptiedGroups = new Set();
+  let removed = 0;
+  for (const group of eventHooks) {
+    if (!isRecord(group) || !Array.isArray(group.hooks)) continue;
+    const originalLength = group.hooks.length;
+    group.hooks = group.hooks.filter((hook) => {
+      if (hook === keepHook || !shouldRemove(hook)) return true;
+      removed++;
+      return false;
+    });
+    if (originalLength > 0 && group.hooks.length === 0) emptiedGroups.add(group);
+  }
+  removeEmptyGroups(eventHooks, emptiedGroups);
+  return removed;
 }
 
 function addToMatcher(eventHooks, matcher, hook) {
@@ -117,19 +135,13 @@ function upsertEvent(settings, event) {
   const canonical = { ...first.hook, type: 'command', command: desiredCommand, timeout: 30 };
   if (first.group.matcher === event.matcher) {
     Object.assign(first.hook, canonical);
-    for (const group of eventHooks) {
-      if (!isRecord(group) || !Array.isArray(group.hooks)) continue;
-      group.hooks = group.hooks.filter((hook) => hook === first.hook || !matches.some((match) => match.hook === hook));
-    }
-    removeEmptyGroups(eventHooks);
+    const matchedHooks = new Set(matches.map(({ hook }) => hook));
+    removeHooks(eventHooks, (hook) => matchedHooks.has(hook), first.hook);
     return unchanged ? 'unchanged' : 'updated';
   }
 
-  for (const group of eventHooks) {
-    if (!isRecord(group) || !Array.isArray(group.hooks)) continue;
-    group.hooks = group.hooks.filter((hook) => !matches.some((match) => match.hook === hook));
-  }
-  removeEmptyGroups(eventHooks);
+  const matchedHooks = new Set(matches.map(({ hook }) => hook));
+  removeHooks(eventHooks, (hook) => matchedHooks.has(hook));
   addToMatcher(eventHooks, event.matcher, canonical);
   return 'updated';
 }
@@ -140,19 +152,11 @@ function removeOwnedHooks(settings) {
   for (const event of EVENTS) {
     const eventHooks = settings.hooks[event.name];
     if (!Array.isArray(eventHooks)) continue;
-    for (const group of eventHooks) {
-      if (!isRecord(group) || !Array.isArray(group.hooks)) continue;
-      const remaining = group.hooks.filter((hook) => {
-        if (!ownsCommand(hook)) return true;
-        removed++;
-        return false;
-      });
-      group.hooks = remaining;
-    }
-    removeEmptyGroups(eventHooks);
-    if (eventHooks.length === 0) delete settings.hooks[event.name];
+    const eventRemoved = removeHooks(eventHooks, ownsCommand);
+    removed += eventRemoved;
+    if (eventRemoved > 0 && eventHooks.length === 0) delete settings.hooks[event.name];
   }
-  if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+  if (removed > 0 && Object.keys(settings.hooks).length === 0) delete settings.hooks;
   return removed;
 }
 
@@ -221,7 +225,10 @@ function describeActions(actions, dryRun) {
 
 export function runInstallHooksCommand(argv, { stdout }) {
   const options = parseArgs(argv);
-  const settingsPath = path.resolve(options.settingsPath ?? path.join(os.homedir(), '.claude', 'settings.json'));
+  const requestedSettingsPath = path.resolve(options.settingsPath ?? path.join(os.homedir(), '.claude', 'settings.json'));
+  const settingsPath = fs.existsSync(requestedSettingsPath) && fs.lstatSync(requestedSettingsPath).isSymbolicLink()
+    ? fs.realpathSync(requestedSettingsPath)
+    : requestedSettingsPath;
   const { settings: original, exists } = readSettings(settingsPath);
   const settings = JSON.parse(JSON.stringify(original));
   let actions;
@@ -234,15 +241,15 @@ export function runInstallHooksCommand(argv, { stdout }) {
   }
 
   if (sameSettings(original, settings)) {
-    stdout('変更はありません。');
+    stdout(options.dryRun ? `変更はありません。\n${NODE_PATH_NOTE}` : '変更はありません。');
     return 0;
   }
 
   const contents = render(settings);
   if (options.dryRun) {
     const details = options.remove
-      ? ['外す予定: comment-tidy のフック', contents]
-      : [...describeActions(actions, true), contents];
+      ? ['外す予定: comment-tidy のフック', contents, NODE_PATH_NOTE]
+      : [...describeActions(actions, true), contents, NODE_PATH_NOTE];
     stdout(details.join('\n'));
     return 0;
   }

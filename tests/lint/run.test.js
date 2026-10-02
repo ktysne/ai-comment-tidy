@@ -54,6 +54,19 @@ describe('lintRepository', () => {
     expect(result.files[0].violations.map(({ ruleId }) => ruleId)).toEqual(['issue-ref', 'todo-no-ticket']);
   });
 
+  test('changed で未追跡ファイルを除外する指定を扱う', () => {
+    const root = makeRepo();
+    write(root, 'tracked.cpp', '// safe\n');
+    commitAll(root);
+    write(root, 'tracked.cpp', '// #12\n');
+    write(root, 'untracked.cpp', '// #34\n');
+
+    const result = lintRepository({ repoRoot: root, mode: 'changed', includeUntracked: false });
+
+    expect(result.confirmed).toBe(1);
+    expect(result.files.map(({ path: filePath }) => filePath)).toEqual(['tracked.cpp']);
+  });
+
   test('staged はインデックスの内容を読み、作業ツリーの未登録変更を読まない', () => {
     const root = makeRepo();
     write(root, 'src/staged.cpp', '// safe\n');

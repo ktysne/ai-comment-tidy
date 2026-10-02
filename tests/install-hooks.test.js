@@ -89,6 +89,42 @@ describe('install-hooks', () => {
     expect(settings.hooks.PreToolUse[1].matcher).toBe('Bash|PowerShell');
   });
 
+  test('先頭に UTF-8 BOM がある設定を読み込む', async () => {
+    const settingsPath = makeSettingsPath();
+    fs.writeFileSync(settingsPath, '\uFEFF{"custom":true}\n', 'utf8');
+
+    const result = await runInstall(settingsPath);
+
+    expect(result.code).toBe(0);
+    expect(readSettings(settingsPath).custom).toBe(true);
+  });
+
+  test('設定ファイルがシンボリックリンクなら実体を書き換える', async (context) => {
+    const settingsPath = makeSettingsPath();
+    const targetPath = path.join(path.dirname(settingsPath), 'real-settings.json');
+    const original = '{"custom":true}\n';
+    fs.writeFileSync(targetPath, original, 'utf8');
+    try {
+      fs.symlinkSync(targetPath, settingsPath, 'file');
+    } catch (error) {
+      if (['EPERM', 'EACCES', 'UNKNOWN'].includes(error.code)) {
+        context.skip();
+        return;
+      }
+      throw error;
+    }
+
+    const result = await runInstall(settingsPath);
+
+    expect(result.code).toBe(0);
+    expect(fs.lstatSync(settingsPath).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(fs.readFileSync(targetPath, 'utf8')).custom).toBe(true);
+    const backups = fs.readdirSync(path.dirname(settingsPath))
+      .filter((name) => name.startsWith('real-settings.json.bak-'));
+    expect(backups).toHaveLength(1);
+    expect(fs.readFileSync(path.join(path.dirname(settingsPath), backups[0]), 'utf8')).toBe(original);
+  });
+
   test('2 回目は設定を書き込まず控えも増やさない', async () => {
     const settingsPath = makeSettingsPath();
     fs.writeFileSync(settingsPath, JSON.stringify({ custom: true }), 'utf8');
@@ -179,6 +215,29 @@ describe('install-hooks', () => {
     expect(ownedHooks(settings)).toEqual([]);
   });
 
+  test('--remove は元から空のフックグループとイベント配列を残す', async () => {
+    const settingsPath = makeSettingsPath();
+    fs.writeFileSync(settingsPath, JSON.stringify({
+      hooks: {
+        PostToolUse: [
+          { matcher: 'AlreadyEmpty', hooks: [] },
+          {
+            matcher: 'Edit|Write',
+            hooks: [{ type: 'command', command: '"/old/node" "/old/comment-tidy.js" lint --hook post-edit' }],
+          },
+        ],
+        PreToolUse: [],
+      },
+    }), 'utf8');
+
+    const result = await runInstall(settingsPath, '--remove');
+
+    expect(result.code).toBe(0);
+    const settings = readSettings(settingsPath);
+    expect(settings.hooks.PostToolUse).toEqual([{ matcher: 'AlreadyEmpty', hooks: [] }]);
+    expect(settings.hooks.PreToolUse).toEqual([]);
+  });
+
   test('--dry-run は追加内容を表示して設定ファイルを変えない', async () => {
     const settingsPath = makeSettingsPath();
     const original = '{"custom":true}\n';
@@ -189,6 +248,7 @@ describe('install-hooks', () => {
     expect(result.code).toBe(0);
     expect(result.stdout.join('\n')).toContain('追加予定: PostToolUse');
     expect(result.stdout.join('\n')).toContain(JSON.stringify(commandFor('post-edit')));
+    expect(result.stdout.join('\n')).toContain('Node.js を入れ替えた後は install-hooks を実行し直してください。');
     expect(fs.readFileSync(settingsPath, 'utf8')).toBe(original);
     expect(fs.readdirSync(path.dirname(settingsPath)).filter((name) => name.includes('.bak-'))).toEqual([]);
   });

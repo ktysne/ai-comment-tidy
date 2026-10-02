@@ -188,8 +188,10 @@ function samePathEntries(paths) {
   return paths.map((filePath) => ({ path: filePath, basePath: filePath }));
 }
 
-function changedEntries(repoRoot, headExists) {
-  const untracked = samePathEntries(gitPaths(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z']));
+function changedEntries(repoRoot, headExists, includeUntracked) {
+  const untracked = includeUntracked
+    ? samePathEntries(gitPaths(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z']))
+    : [];
   if (headExists) {
     return [
       ...parseNameStatus(gitPaths(repoRoot, ['diff', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', '--'])),
@@ -210,12 +212,49 @@ function stagedEntries(repoRoot, headExists) {
   return parseNameStatus(gitPaths(repoRoot, ['diff', '--cached', '--name-status', '-z', '-M', DIFF_FILTER, 'HEAD', '--']));
 }
 
-function fileEntries(repoRoot, mode, files, headExists, baseDirectory) {
+function filesUnderDirectory(repoRoot, absoluteDirectory) {
+  const entries = [];
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolutePath = path.join(directory, entry.name);
+      const relativePath = path.relative(repoRoot, absolutePath).split(path.sep).join('/');
+      if (entry.isDirectory()) {
+        if (entry.name === '.git' || isIgnored(repoRoot, relativePath)) continue;
+        visit(absolutePath);
+      } else if (entry.isFile()) {
+        entries.push({ path: relativePath, basePath: relativePath });
+      }
+    }
+  };
+  visit(absoluteDirectory);
+  return entries;
+}
+
+function fileEntries(repoRoot, mode, files, headExists, baseDirectory, includeUntracked) {
   if (mode === 'files') {
     if (!Array.isArray(files) || files.length === 0) throw new Error('lint するファイルを指定してください');
-    return samePathEntries(files.map((file) => normalizeFilePath(repoRoot, file, baseDirectory)));
+    const entries = [];
+    for (const file of files) {
+      const resolvedPath = path.resolve(path.isAbsolute(file) ? file : path.join(baseDirectory, file));
+      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
+        const realDirectory = realPathOrSelf(resolvedPath);
+        const realRoot = realPathOrSelf(repoRoot);
+        const relativeDirectory = path.relative(realRoot, realDirectory);
+        if (relativeDirectory === '..' || relativeDirectory.startsWith(`..${path.sep}`)
+            || path.isAbsolute(relativeDirectory)) {
+          throw new Error(`ファイルはリポジトリの中を指定してください: ${file}`);
+        }
+        entries.push(...filesUnderDirectory(repoRoot, realDirectory));
+      } else {
+        const relativePath = normalizeFilePath(repoRoot, file, baseDirectory);
+        entries.push({ path: relativePath, basePath: relativePath });
+      }
+    }
+    const unique = new Map();
+    for (const entry of entries) if (!unique.has(entry.path)) unique.set(entry.path, entry);
+    return [...unique.values()];
   }
-  if (mode === 'changed') return changedEntries(repoRoot, headExists);
+  if (mode === 'changed') return changedEntries(repoRoot, headExists, includeUntracked);
   if (mode === 'staged') return stagedEntries(repoRoot, headExists);
   throw new Error(`lint の実行モードが不正です: ${mode}`);
 }
@@ -238,8 +277,9 @@ function emptyResult() {
 /**
  * @param {string} [options.repoRoot] 省くと、カレントディレクトリを含むリポジトリのルートを使う
  * @param {string} [options.baseDirectory] 相対パスのファイル名を解決する基準。既定は、repoRoot を渡したときはそのルート、省いたときはカレントディレクトリ
+ * @param {boolean} [options.includeUntracked=true] `changed` で未追跡ファイルを含めるか
  */
-export function lintRepository({ repoRoot, mode, files = [], baseDirectory }) {
+export function lintRepository({ repoRoot, mode, files = [], baseDirectory, includeUntracked = true }) {
   const root = repoRoot === undefined ? repositoryRootOf(baseDirectory ?? process.cwd()) : path.resolve(repoRoot);
   const fileBase = baseDirectory ?? (repoRoot === undefined ? process.cwd() : root);
   const config = loadLintConfig(root);
@@ -249,7 +289,7 @@ export function lintRepository({ repoRoot, mode, files = [], baseDirectory }) {
   const headExists = hasHead(root);
   const baselinePaths = headPaths(root, headExists);
   const basePathOf = new Map();
-  for (const entry of fileEntries(root, mode, files, headExists, fileBase)) {
+  for (const entry of fileEntries(root, mode, files, headExists, fileBase, includeUntracked)) {
     if (!basePathOf.has(entry.path)) basePathOf.set(entry.path, entry.basePath);
   }
   const paths = [...basePathOf.keys()].sort();
@@ -269,6 +309,7 @@ export function lintRepository({ repoRoot, mode, files = [], baseDirectory }) {
     const absolutePath = path.join(root, ...relativePath.split('/'));
     if (mode !== 'staged') {
       if (mode === 'changed' && !fs.existsSync(absolutePath)) continue;
+      if (mode === 'files' && !fs.existsSync(absolutePath)) continue;
       if (!fs.statSync(absolutePath).isFile()) continue;
     }
 
