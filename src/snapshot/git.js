@@ -87,6 +87,28 @@ function readFilteredBlobs(repoRoot, entries) {
   return contents;
 }
 
+function readRawBlobs(repoRoot, entries) {
+  const contents = new Map();
+  if (entries.length === 0) return contents;
+  const input = entries.map(([, objectId]) => `${objectId}\n`).join('');
+  const output = git(repoRoot, ['cat-file', '--batch'], Buffer.from(input, 'utf8'));
+  let position = 0;
+  for (const [filePath, objectId] of entries) {
+    const headerEnd = output.indexOf(0x0a, position);
+    const [returnedObjectId, type, sizeText] = output.subarray(position, Math.max(headerEnd, position)).toString('ascii').split(' ');
+    const size = Number(sizeText);
+    const contentStart = headerEnd + 1;
+    const contentEnd = contentStart + size;
+    if (headerEnd < 0 || returnedObjectId !== objectId || type !== 'blob'
+      || !Number.isSafeInteger(size) || size < 0 || output[contentEnd] !== 0x0a) {
+      throw new Error(`コミットの内容を読めません: ${filePath}`);
+    }
+    contents.set(filePath, output.subarray(contentStart, contentEnd));
+    position = contentEnd + 1;
+  }
+  return contents;
+}
+
 export function resolveCommit(repoRoot, ref) {
   return git(repoRoot, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]).toString('utf8').trim();
 }
@@ -100,6 +122,16 @@ export function createGitSnapshot(repoRoot, ref = null) {
     const normalizedPaths = filePaths.map(normalizePath);
     if (ref === null) return new Map(normalizedPaths.map((filePath) => [filePath, snapshot.read(filePath)]));
     return readFilteredBlobs(root, normalizedPaths.map((filePath) => {
+      const objectId = files.get(filePath);
+      if (!objectId) throw new Error(`コミットにファイルがありません: ${filePath}`);
+      return [filePath, objectId];
+    }));
+  };
+
+  const readManyRaw = (filePaths) => {
+    if (ref === null) throw new Error('blob の読み取りにはコミットの読み取り口が必要です');
+    const normalizedPaths = filePaths.map(normalizePath);
+    return readRawBlobs(root, normalizedPaths.map((filePath) => {
       const objectId = files.get(filePath);
       if (!objectId) throw new Error(`コミットにファイルがありません: ${filePath}`);
       return [filePath, objectId];
@@ -121,6 +153,11 @@ export function createGitSnapshot(repoRoot, ref = null) {
       return ref === null ? worktreePaths.has(normalizedPath) : files.has(normalizedPath);
     },
     readMany,
+    readManyRaw,
+    changedFiles() {
+      if (ref === null) throw new Error('変更ファイルの取得にはコミットの読み取り口が必要です');
+      return nulFields(git(root, ['diff', '--name-only', '--no-renames', '-z', ref])).map(normalizePath);
+    },
   };
   return snapshot;
 }

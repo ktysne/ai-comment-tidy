@@ -25,6 +25,17 @@ function makeRepo() {
   return root;
 }
 
+function makeLegacyCheckout() {
+  const root = makeRepo();
+  write(root, '.gitattributes', '* text=auto\n');
+  write(root, 'src/a.cpp', 'int value; // before\nint other;\n');
+  write(root, 'docs/guide.md', '# Guide\n');
+  const base = commitAll(root);
+  execFileSync('git', ['-C', root, 'checkout', '--quiet', '--force', base, '--', '.']);
+  execFileSync('git', ['-C', root, 'config', 'core.autocrlf', 'true']);
+  return { root, base };
+}
+
 function write(root, filePath, contents) {
   const absolutePath = path.join(root, ...filePath.split('/'));
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
@@ -97,5 +108,48 @@ describe('check コマンドの引数', () => {
 
     expect(await run(['check', '--files', 'src/a.cpp'], result.io)).toBe(2);
     expect(result.err.join('\n')).toContain('--base');
+  });
+});
+
+describe('check --base の既存 LF チェックアウト', () => {
+  test('担当コメントの変更を通し、git の差分には担当ファイルだけを返す', async () => {
+    const { root, base } = makeLegacyCheckout();
+    write(root, 'src/a.cpp', 'int value; // after\nint other;\n');
+    const changedFiles = execFileSync('git', [
+      '-C', root, 'diff', '--name-only', '--no-renames', '-z', base,
+    ]).toString('utf8').split('\0').filter(Boolean);
+    const result = capture();
+
+    expect(changedFiles).toEqual(['src/a.cpp']);
+    expect(fs.readFileSync(path.join(root, 'docs', 'guide.md'))).toEqual(Buffer.from('# Guide\n'));
+    expect(await run(['check', '--repo', root, '--base', base, '--files', 'src/a.cpp'], result.io)).toBe(0);
+    expect(result.out[0]).toContain('check: 合格');
+  });
+
+  test('担当外の内容が変わると out-of-scope-change で不合格にする', async () => {
+    const { root, base } = makeLegacyCheckout();
+    write(root, 'docs/guide.md', '# Changed\n');
+    const result = capture();
+
+    expect(await run(['check', '--repo', root, '--base', base, '--files', 'src/a.cpp'], result.io)).toBe(1);
+    expect(result.out.join('\n')).toContain('docs/guide.md [out-of-scope-change]');
+  });
+
+  test('未追跡ファイルを担当外の変更として扱わない', async () => {
+    const { root, base } = makeLegacyCheckout();
+    write(root, 'docs/new.md', '# New\n');
+    const result = capture();
+
+    expect(await run(['check', '--repo', root, '--base', base, '--files', 'src/a.cpp'], result.io)).toBe(0);
+    expect(result.out[0]).toContain('check: 合格');
+  });
+
+  test('CRLF と LF が混在する担当ファイルを line-ending で不合格にする', async () => {
+    const { root, base } = makeLegacyCheckout();
+    write(root, 'src/a.cpp', Buffer.from('int value; // before\r\nint other;\n'));
+    const result = capture();
+
+    expect(await run(['check', '--repo', root, '--base', base, '--files', 'src/a.cpp'], result.io)).toBe(1);
+    expect(result.out.join('\n')).toContain('src/a.cpp [line-ending]');
   });
 });

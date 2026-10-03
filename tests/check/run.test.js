@@ -28,10 +28,14 @@ function buffers(files) {
 }
 
 function check(before, after, options = {}) {
+  const beforeBuffers = buffers(before);
+  const afterBuffers = buffers(after);
+  const changedFiles = options.baselineMetadata?.changedFiles ?? (() => Object.keys(beforeBuffers)
+    .filter((filePath) => !afterBuffers[filePath] || !beforeBuffers[filePath].equals(afterBuffers[filePath])));
   return runCheck({
     files: options.files ?? ['src/a.cpp'],
-    baseline: snapshot(buffers(before), options.baselineMetadata),
-    target: snapshot(buffers(after)),
+    baseline: snapshot(beforeBuffers, { ...options.baselineMetadata, changedFiles }),
+    target: snapshot(afterBuffers),
     hashList: options.hashList ?? null,
     config: { ...config, ...options.config },
     offline: options.offline ?? false,
@@ -162,6 +166,17 @@ describe('check の行末', () => {
     );
 
     expect(result.failures).toContainEqual(expect.objectContaining({ check: 'line-ending', file: 'src/a.cpp' }));
+  });
+
+  test('blob の行末が作業ツリーと同じならフィルター後の行末が異なっても通す', () => {
+    const rawBaseline = Buffer.from('// before\nint value;\n');
+    const result = check(
+      { 'src/a.cpp': Buffer.from('// before\r\nint value;\r\n') },
+      { 'src/a.cpp': Buffer.from('// after\nint value;\n') },
+      { baselineMetadata: { readManyRaw: () => new Map([['src/a.cpp', rawBaseline]]) } },
+    );
+
+    expect(result.failures.filter(({ check: name }) => name === 'line-ending')).toEqual([]);
   });
 
   test('BOM が変わると不合格にする', () => {

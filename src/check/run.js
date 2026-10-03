@@ -82,7 +82,7 @@ function normalizedPath(filePath) {
   return filePath.replace(/\\/g, '/');
 }
 
-function compareOutOfScope({ files, baseline, target, baselineContents, targetContents, hashList, offline, failures }) {
+function compareOutOfScope({ files, target, targetContents, hashList, changedFiles, offline, failures }) {
   const assigned = new Set(files);
   if (offline) {
     const paths = Object.keys(hashList.files).filter((filePath) => !assigned.has(filePath));
@@ -98,15 +98,8 @@ function compareOutOfScope({ files, baseline, target, baselineContents, targetCo
     return;
   }
 
-  const beforePaths = new Set(baseline.listFiles().map(normalizedPath));
-  const afterPaths = new Set(target.listFiles().map(normalizedPath));
-  const paths = [...new Set([...beforePaths, ...afterPaths])].filter((filePath) => !assigned.has(filePath)).sort();
-  for (const filePath of paths) {
-    if (!beforePaths.has(filePath) || !afterPaths.has(filePath)) {
-      failures.push({ check: 'out-of-scope-change', file: filePath, detail: '担当外のファイルが追加または削除されています' });
-    } else if (!baselineContents.get(filePath).equals(targetContents.get(filePath))) {
-      failures.push({ check: 'out-of-scope-change', file: filePath, detail: '担当外のファイルが変更されています' });
-    }
+  for (const filePath of changedFiles.filter((changedPath) => !assigned.has(changedPath)).sort()) {
+    failures.push({ check: 'out-of-scope-change', file: filePath, detail: '担当外のファイルが変更されています' });
   }
 }
 
@@ -124,10 +117,9 @@ function addCommentLineFailures(filePath, blocks, config, failures) {
   }
 }
 
-function addCommentWarnings(filePath, source, linesToCheck, config, targetContents, warnings) {
+function addCommentWarnings(filePath, source, linesToCheck, config, targetContents, documentPaths, warnings) {
   const lines = sourceWithoutBom(source).replace(/\r\n/g, '\n').split('\n');
   const docsRoot = config.docs.root.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '');
-  const documents = [...targetContents.keys()].map(normalizedPath);
   const readDocument = (documentPath) => {
     return decodeSource(targetContents.get(documentPath), documentPath);
   };
@@ -147,7 +139,7 @@ function addCommentWarnings(filePath, source, linesToCheck, config, targetConten
       if (!docReferenceExists({
         ...reference,
         docsRoot,
-        files: documents,
+        files: documentPaths,
         read: readDocument,
       })) {
         warnings.push({
@@ -166,22 +158,23 @@ export function runCheck({ files, baseline, target, hashList = null, config, off
   const selectedFiles = [...new Set(files.map(normalizedPath))].sort();
   const failures = [];
   const warnings = [];
-  const baselinePaths = new Set(baseline.listFiles().map(normalizedPath));
   const targetPaths = new Set(target.listFiles().map(normalizedPath));
+  const docsRoot = config.docs.root.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '');
+  const docsPrefix = docsRoot === '' || docsRoot === '.' ? '' : `${docsRoot}/`;
+  const documentPaths = [...targetPaths].filter((filePath) => !docsPrefix || filePath.startsWith(docsPrefix));
 
   for (const filePath of selectedFiles) {
     if (!languageOf(filePath)) throw new Error(`対応する言語がありません: ${filePath}`);
     if (!baseline.has(filePath)) throw new Error(`基準に担当ファイルがありません: ${filePath}`);
   }
 
-  const baselineReadPaths = offline
-    ? selectedFiles
-    : [...new Set([...selectedFiles, ...baselinePaths])].filter((filePath) => baseline.has(filePath));
+  const baselineReadPaths = selectedFiles.filter((filePath) => baseline.has(filePath));
   const targetReadPaths = offline
     ? [...targetPaths]
-    : [...new Set([...selectedFiles, ...targetPaths])].filter((filePath) => target.has(filePath));
+    : [...new Set([...selectedFiles, ...documentPaths])].filter((filePath) => target.has(filePath));
   const baselineContents = baseline.readMany(baselineReadPaths);
   const targetContents = target.readMany(targetReadPaths);
+  const lineEndingMismatches = [];
 
   for (const filePath of selectedFiles) {
     if (!target.has(filePath)) {
@@ -207,16 +200,30 @@ export function runCheck({ files, baseline, target, hashList = null, config, off
     const afterBlocks = commentBlocks(filePath, afterSource);
     addCommentLineFailures(filePath, afterBlocks, config, failures);
     const addedLines = addedCommentLines(beforeBlocks, afterBlocks);
-    addCommentWarnings(filePath, afterSource, addedLines, config, targetContents, warnings);
+    addCommentWarnings(filePath, afterSource, addedLines, config, targetContents, documentPaths, warnings);
 
-    if (!beforeBuffer.equals(afterBuffer)
-      && JSON.stringify(lineEndingSignature(beforeBuffer)) !== JSON.stringify(lineEndingSignature(afterBuffer))) {
-      failures.push({
-        check: 'line-ending',
-        file: filePath,
-        detail: `基準 ${JSON.stringify(lineEndingSignature(beforeBuffer))}、作業 ${JSON.stringify(lineEndingSignature(afterBuffer))}`,
-      });
+    if (!beforeBuffer.equals(afterBuffer)) {
+      const beforeSignature = lineEndingSignature(beforeBuffer);
+      const afterSignature = lineEndingSignature(afterBuffer);
+      if (JSON.stringify(beforeSignature) !== JSON.stringify(afterSignature)) {
+        lineEndingMismatches.push({ filePath, beforeSignature, afterSignature });
+      }
     }
+  }
+
+  let rawBaselineContents = new Map();
+  if (!offline && lineEndingMismatches.length > 0 && typeof baseline.readManyRaw === 'function') {
+    rawBaselineContents = baseline.readManyRaw(lineEndingMismatches.map(({ filePath }) => filePath));
+  }
+  for (const { filePath, beforeSignature, afterSignature } of lineEndingMismatches) {
+    const rawBaseline = rawBaselineContents.get(filePath);
+    const rawSignature = rawBaseline && lineEndingSignature(rawBaseline);
+    if (rawSignature && JSON.stringify(rawSignature) === JSON.stringify(afterSignature)) continue;
+    failures.push({
+      check: 'line-ending',
+      file: filePath,
+      detail: `基準 ${JSON.stringify(beforeSignature)}、作業 ${JSON.stringify(afterSignature)}`,
+    });
   }
 
   if (offline && (!hashList || hashList.algorithm !== 'sha256' || !hashList.files)) {
@@ -224,11 +231,10 @@ export function runCheck({ files, baseline, target, hashList = null, config, off
   }
   compareOutOfScope({
     files: selectedFiles,
-    baseline,
     target,
-    baselineContents,
     targetContents,
     hashList,
+    changedFiles: !offline && typeof baseline.changedFiles === 'function' ? baseline.changedFiles() : [],
     offline,
     failures,
   });
