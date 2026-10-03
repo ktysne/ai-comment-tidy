@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { languageOf } from '../lex/index.js';
 import { filterToRanges } from './new-violations.js';
 import { formatReport } from './report.js';
 import { lintRepository, repositoryRootOf } from './run.js';
@@ -533,7 +532,7 @@ function runPostEdit({ toolInput, toolName, toolResponse, cwd }, deps) {
   if (toolName === 'Write' && typeof toolInput.content !== 'string') return 0;
 
   const absolutePath = path.resolve(cwd, filePath);
-  if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile() || !languageOf(absolutePath)) return 0;
+  if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) return 0;
   const repoRoot = repositoryRootOrNull(path.dirname(absolutePath), deps.repositoryRootOf);
   if (repoRoot === null) return 0;
 

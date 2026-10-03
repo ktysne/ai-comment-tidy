@@ -21,7 +21,7 @@ function lineOf(position, lineStarts) {
   return low + 1;
 }
 
-export function normalizedCodeTokens(filePath, rawSource) {
+export function normalizedCodeTokens(filePath, rawSource, config) {
   // 比較するコードは CRLF と LF の差を無視するため、改行を LF に統一して解析する。
   const source = rawSource.replace(/\r\n/g, '\n');
   const lineStarts = lineStartsOf(source);
@@ -38,7 +38,7 @@ export function normalizedCodeTokens(filePath, rawSource) {
     offsets = [];
   };
 
-  for (const segment of lex(filePath, source)) {
+  for (const segment of lex(filePath, source, config)) {
     const text = source.slice(segment.start, segment.end);
     if (segment.kind === 'string') {
       flush();
@@ -55,6 +55,6 @@ export function normalizedCodeTokens(filePath, rawSource) {
   return tokens;
 }
 
-export function normalizedCode(filePath, rawSource) {
-  return normalizedCodeTokens(filePath, rawSource).map(({ value }) => value).join(' ');
+export function normalizedCode(filePath, rawSource, config) {
+  return normalizedCodeTokens(filePath, rawSource, config).map(({ value }) => value).join(' ');
 }

@@ -1,4 +1,4 @@
-import { languageOf } from '../lex/index.js';
+import { languageFor } from '../lex/index.js';
 
 const VALUE_NAMES = Object.freeze([
   'lines',
@@ -55,9 +55,9 @@ function emptyStats(lines) {
 
 export { VALUE_NAMES };
 
-export function fileStats(filePath, buffer) {
+export function fileStats(filePath, buffer, config) {
   const source = normalizedSource(decodeUtf8(buffer, filePath));
-  const language = languageOf(filePath);
+  const language = languageFor(filePath, config);
   if (!language) throw new Error(`対応する言語ではありません: ${filePath}`);
 
   const lines = sourceLines(source);

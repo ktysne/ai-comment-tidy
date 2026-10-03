@@ -1,4 +1,4 @@
-import { languageOf, lex } from './lex/index.js';
+import { languageFor, lex } from './lex/index.js';
 
 function lineStartsOf(source) {
   const starts = [0];
@@ -54,10 +54,10 @@ function flushBlock(blocks, pending) {
   });
 }
 
-export function commentBlocks(filePath, rawSource) {
+export function commentBlocks(filePath, rawSource, config) {
   const withoutBom = rawSource.charCodeAt(0) === 0xfeff ? rawSource.slice(1) : rawSource;
   const source = withoutBom.replace(/\r\n/g, '\n');
-  const languageId = languageOf(filePath)?.id ?? null;
+  const languageId = languageFor(filePath, config)?.id ?? null;
   const lineStarts = lineStartsOf(source);
   const rows = lineStarts.map((start, index) => ({
     start,
@@ -78,7 +78,7 @@ export function commentBlocks(filePath, rawSource) {
     return low;
   };
 
-  for (const segment of lex(filePath, source)) {
+  for (const segment of lex(filePath, source, config)) {
     const firstLine = lineOf(segment.start);
     const lastLine = lineOf(Math.max(segment.start, segment.end - 1));
     const cmakeBracket = languageId === 'cmake' && segment.kind === 'comment'

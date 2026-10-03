@@ -52,6 +52,27 @@ describe('comment-tidy の入口', () => {
     }
   });
 
+  test('lint は絶対パスの --config を読み、scope.include を対象判定に使わない', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-cli-config-'));
+    try {
+      execFileSync('git', ['-C', root, 'init', '--quiet']);
+      const configPath = path.join(root, 'custom-config.json');
+      fs.writeFileSync(configPath, JSON.stringify({
+        scope: { include: ['another/**'], exclude: [] },
+        languages: { js: ['*.custom'] },
+      }), 'utf8');
+      const filePath = path.join(root, 'source.custom');
+      fs.writeFileSync(filePath, '// #123\n', 'utf8');
+      const result = capture();
+
+      expect(await run(['lint', filePath, '--repo', root, '--config', configPath], result.io)).toBe(EXIT_FAILED);
+      expect(result.out.join('\n')).toContain('[確定] issue-ref');
+      expect(await run(['lint', filePath, '--repo', root, '--config', 'relative.json'], capture().io)).toBe(EXIT_USAGE);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('lint は未対応のフック名を引数の誤りとして 2 で終える', async () => {
     const { err } = capture();
     expect(await run(['lint', '--hook', 'unknown'], {

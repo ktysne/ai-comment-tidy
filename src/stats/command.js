@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { loadConfig } from '../config.js';
 import { createGitSnapshot, resolveCommit } from '../snapshot/git.js';
 import { VALUE_NAMES } from './file-stats.js';
 import { emptyValues, statsForSnapshot } from './run.js';
@@ -15,10 +16,15 @@ function parseArgs(argv) {
   const seen = new Set();
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index];
-    if (argument === '--repo' || argument === '--ref' || argument === '--out') {
+    if (argument === '--repo' || argument === '--ref' || argument === '--out' || argument === '--config') {
       if (seen.has(argument)) throw new Error(`${argument} は 1 つだけ指定できます`);
       seen.add(argument);
-      parsed[{ '--repo': 'repoRoot', '--ref': 'ref', '--out': 'out' }[argument]] = requiredValue(argv, index, argument);
+      parsed[{
+        '--repo': 'repoRoot',
+        '--ref': 'ref',
+        '--out': 'out',
+        '--config': 'configPath',
+      }[argument]] = requiredValue(argv, index, argument);
       index++;
     } else if (argument === '--paths') {
       const start = index + 1;
@@ -27,6 +33,9 @@ function parseArgs(argv) {
     } else {
       throw new Error(`認識できない引数です: ${argument}`);
     }
+  }
+  if (parsed.configPath !== undefined && !path.isAbsolute(parsed.configPath) && !path.win32.isAbsolute(parsed.configPath)) {
+    throw new Error('--config には絶対パスを指定してください');
   }
   return parsed;
 }
@@ -112,12 +121,13 @@ export function runStatsCommand(argv, io) {
 
   const options = parseArgs(argv);
   const repoRoot = path.resolve(options.repoRoot ?? process.cwd());
+  const config = loadConfig(repoRoot, options.configPath);
   const ref = options.ref === undefined ? null : resolveCommit(repoRoot, options.ref);
   const snapshot = createGitSnapshot(repoRoot, ref);
   const result = {
     schemaVersion: 1,
     source: { ref, worktree: ref === null },
-    ...statsForSnapshot(snapshot, { prefixes: options.prefixes }),
+    ...statsForSnapshot(snapshot, { prefixes: options.prefixes, config }),
   };
   const json = `${JSON.stringify(result, null, 2)}\n`;
   if (options.out === undefined) {

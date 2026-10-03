@@ -1,8 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { languageOf } from '../lex/index.js';
-import { loadLintConfig } from './config.js';
+import { isTargetFile, loadConfig } from '../config.js';
 import { newViolations } from './new-violations.js';
 import { findViolations } from './rules.js';
 
@@ -68,56 +67,6 @@ function normalizeFilePath(repoRoot, input, baseDirectory) {
     throw new Error(`ファイルはリポジトリの中を指定してください: ${input}`);
   }
   return relativePath.split(path.sep).join('/');
-}
-
-function globSource(pattern) {
-  let source = '';
-  for (let index = 0; index < pattern.length; index++) {
-    const character = pattern[index];
-    const next = pattern[index + 1];
-    if (character === '*' && next === '*') {
-      if (pattern[index + 2] === '/') {
-        source += '(?:.*/)?';
-        index += 2;
-      } else {
-        source += '.*';
-        index++;
-      }
-    } else if (character === '*') {
-      source += '[^/]*';
-    } else if (character === '?') {
-      source += '[^/]';
-    } else if (character === '{') {
-      const close = pattern.indexOf('}', index + 1);
-      if (close >= 0 && pattern.slice(index + 1, close).includes(',')) {
-        const alternatives = pattern.slice(index + 1, close).split(',');
-        source += `(?:${alternatives.map(globSource).join('|')})`;
-        index = close;
-      } else {
-        source += '\\{';
-      }
-    } else if (character === '}') {
-      source += '\\}';
-    } else {
-      source += character.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-    }
-  }
-  return source;
-}
-
-function matchesGlob(relativePath, pattern) {
-  const normalizedPattern = pattern.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\//, '').replace(/\/$/, '');
-  const hasSlash = normalizedPattern.includes('/');
-  const source = globSource(normalizedPattern);
-  // パターンがフォルダーに当たるときは、その下のファイルにも当てる(.gitignore と同じ感覚で書けるように)。
-  const expression = hasSlash
-    ? new RegExp(`^${source}(?:/.*)?$`)
-    : new RegExp(`(?:^|/)${source}(?:/|$)`);
-  return expression.test(relativePath);
-}
-
-function isExcluded(relativePath, patterns) {
-  return patterns.some((pattern) => matchesGlob(relativePath, pattern));
 }
 
 function isIgnored(repoRoot, relativePath) {
@@ -262,7 +211,7 @@ function fileEntries(repoRoot, mode, files, headExists, baseDirectory, includeUn
 function deletedFileViolations(repoRoot, baselinePaths, options) {
   const deleted = gitPaths(repoRoot, ['diff', '--name-only', '-z', '--diff-filter=D', 'HEAD', '--']);
   return deleted
-    .filter((deletedPath) => languageOf(deletedPath))
+    .filter((deletedPath) => isTargetFile(deletedPath, options.config, { include: false }))
     .flatMap((deletedPath) => findViolations(deletedPath, headSource(repoRoot, deletedPath, baselinePaths), options));
 }
 
@@ -276,10 +225,18 @@ function emptyResult() {
  * @param {boolean} [options.includeUntracked=true] `changed` と `staged-with-worktree` の作業ツリー範囲で未追跡ファイルを含めるか
  * @param {string[]} [options.pathspecs=[]] 変更一覧を絞るリポジトリルートからのリテラルパス
  */
-export function lintRepository({ repoRoot, mode, files = [], baseDirectory, includeUntracked = true, pathspecs = [] }) {
+export function lintRepository({
+  repoRoot,
+  mode,
+  files = [],
+  baseDirectory,
+  includeUntracked = true,
+  pathspecs = [],
+  configPath,
+}) {
   const root = repoRoot === undefined ? repositoryRootOf(baseDirectory ?? process.cwd()) : path.resolve(repoRoot);
   const fileBase = baseDirectory ?? (repoRoot === undefined ? process.cwd() : root);
-  const config = loadLintConfig(root);
+  const config = loadConfig(root, configPath);
   if (!config.lint.enabled) return emptyResult();
 
   validateRepositoryRoot(root);
@@ -297,11 +254,12 @@ export function lintRepository({ repoRoot, mode, files = [], baseDirectory, incl
     maxCommentLines: config.maxCommentLines,
     licensePatterns: config.licensePatterns,
     allow: config.lint.allow,
+    config,
   };
   let movedBaseline = null;
 
   for (const relativePath of paths) {
-    if (!languageOf(relativePath) || isExcluded(relativePath, config.scope.exclude)) continue;
+    if (!isTargetFile(relativePath, config, { include: false })) continue;
     if (mode === 'files' && isIgnored(root, relativePath)) continue;
     const absolutePath = path.join(root, ...relativePath.split('/'));
     const entry = basePathOf.get(relativePath);

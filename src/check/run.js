@@ -1,6 +1,7 @@
 import { commentBlocks } from '../comment-blocks.js';
+import { isTargetFile } from '../config.js';
 import { docReferenceExists, findDocReferences } from '../docs-refs.js';
-import { languageOf } from '../lex/index.js';
+import { languageFor } from '../lex/index.js';
 import { normalizedCode, normalizedCodeTokens } from '../lex/normalized-code.js';
 import { sha256 } from '../snapshot/hash-list.js';
 import { lineEndingSignature } from './line-endings.js';
@@ -164,7 +165,8 @@ export function runCheck({ files, baseline, target, hashList = null, config, off
   const documentPaths = [...targetPaths].filter((filePath) => !docsPrefix || filePath.startsWith(docsPrefix));
 
   for (const filePath of selectedFiles) {
-    if (!languageOf(filePath)) throw new Error(`対応する言語がありません: ${filePath}`);
+    if (!languageFor(filePath, config)) throw new Error(`対応する言語がありません: ${filePath}`);
+    if (!isTargetFile(filePath, config)) throw new Error('設定の対象外です: ' + filePath);
     if (!baseline.has(filePath)) throw new Error(`基準に担当ファイルがありません: ${filePath}`);
   }
 
@@ -188,16 +190,16 @@ export function runCheck({ files, baseline, target, hashList = null, config, off
     const afterSource = decodeSource(afterBuffer, filePath);
     const beforeCode = sourceWithoutBom(beforeSource);
     const afterCode = sourceWithoutBom(afterSource);
-    if (normalizedCode(filePath, beforeCode) !== normalizedCode(filePath, afterCode)) {
+    if (normalizedCode(filePath, beforeCode, config) !== normalizedCode(filePath, afterCode, config)) {
       failures.push(tokenFailure(
         filePath,
-        normalizedCodeTokens(filePath, beforeCode),
-        normalizedCodeTokens(filePath, afterCode),
+        normalizedCodeTokens(filePath, beforeCode, config),
+        normalizedCodeTokens(filePath, afterCode, config),
       ));
     }
 
-    const beforeBlocks = commentBlocks(filePath, beforeSource);
-    const afterBlocks = commentBlocks(filePath, afterSource);
+    const beforeBlocks = commentBlocks(filePath, beforeSource, config);
+    const afterBlocks = commentBlocks(filePath, afterSource, config);
     addCommentLineFailures(filePath, afterBlocks, config, failures);
     const addedLines = addedCommentLines(beforeBlocks, afterBlocks);
     addCommentWarnings(filePath, afterSource, addedLines, config, targetContents, documentPaths, warnings);
