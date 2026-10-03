@@ -120,6 +120,20 @@ node bin/comment-tidy.js lint --changed
 違反が無ければ何も表示しません。
 終了コードは、0 が違反なしか見直し候補だけ、1 が確定の違反あり、2 が引数の誤りか検査の失敗です。
 
+### 集計
+
+作業ツリーの集計を JSON に保存し、領域ごとの要約を表示します。
+
+```bash
+node bin/comment-tidy.js stats --repo <dir> --out current.json
+```
+
+保存した JSON は `--compare` で領域ごとと全体の表にできます。
+
+```bash
+node bin/comment-tidy.js stats --compare before=before.json after=current.json
+```
+
 ### リポジトリごとの設定
 
 設定ファイルが無いリポジトリでも、既定値で動きます。
@@ -149,7 +163,7 @@ node bin/comment-tidy.js lint --changed
 |---|---|---|
 | 0 | 準備 | 済み |
 | 1a | 字句解析、`lint`、フックの入口、`install-hooks` | 済み |
-| 1b | `stats`(集計)と `check`(コメント以外が変わっていないことの検査) | 未着手 |
+| 1b | `stats`(集計)と `check`(コメント以外が変わっていないことの検査) | 1b-1 済み、1b-2 未着手 |
 | 2〜9 | 設定と束、実行と取り込み、監査、仕上げの道具、スキルと資料、試行 | 未着手 |
 
 整理の回のコマンド(`init`、`plan`、`run`、`apply` など)は、まだありません。
