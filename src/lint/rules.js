@@ -81,7 +81,7 @@ function makePatterns(patterns, field) {
 
 function commentLineBody(text, languageId, closingMarker) {
   let body = text;
-  if (languageId === 'cpp' || languageId === 'js') {
+  if (languageId === 'cpp' || languageId === 'csharp' || languageId === 'js') {
     if (body === '/**/') return '';
     body = body.replace(/^\/\/[/!]?<?/, '').replace(/^\/\*+!?<?/, '');
     body = body.replace(/^\*(?!\/)/, '').replace(/\*\/$/, '');
@@ -210,7 +210,7 @@ function matchRule(rule, block, bodies, countedLines, language, compactedIndexMa
 
   if (rule.ruleId === 'separator') {
     const pattern = language?.separatorPattern;
-    const slashOnly = language?.id === 'cpp' || language?.id === 'js';
+    const slashOnly = language?.id === 'cpp' || language?.id === 'csharp' || language?.id === 'js';
     for (const line of block.lines) {
       if (pattern?.test(line.text) || (slashOnly && /^\/{4,}$/.test(line.text))) {
         return { text: line.text, index: null, length: 0, body: linedBody };

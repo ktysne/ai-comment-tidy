@@ -1,6 +1,7 @@
 const isIdentifierCharacter = (character) => character !== undefined && /[A-Za-z0-9_$]/.test(character);
 
-export function lexCppLike(source, isJs) {
+export function lexCppLike(source, options) {
+  const isJs = options.language === 'js';
   const segments = [];
   let index = 0;
   let codeStart = 0;
