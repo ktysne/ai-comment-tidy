@@ -70,7 +70,7 @@ export function docReferenceExists({ doc, heading, docsRoot, files, read }) {
     const normalized = filePath.replace(/\\/g, '/');
     const fileName = path.posix.basename(normalized);
     if (!normalized.startsWith(rootPrefix) || !fileName.toLowerCase().endsWith('.md')) return false;
-    return fileName === doc || fileName === `${doc}.md`;
+    return fileName.startsWith(doc);
   });
   const expected = withoutParentheticalSupplement(heading);
   return candidates.some((filePath) => markdownHeadings(read(filePath))

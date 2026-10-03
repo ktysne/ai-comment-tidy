@@ -253,12 +253,12 @@ describe('check のコメント警告', () => {
     expect(result.warnings).toContainEqual(expect.objectContaining({ check: 'doc-ref', file: 'src/a.cpp', line: 1 }));
   });
 
-  test('資料の参照は同名の Markdown だけを照合し、画像や接頭辞が同じ資料を読まない', () => {
+  test('資料の参照は Markdown だけを照合し、同じ名前で始まる画像を読まない', () => {
     const image = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe]);
-    const docs = { 'docs/guide.png': image, 'docs/guide-old.md': '# 古い節\n', 'docs/guide.md': '# 概要\n' };
+    const docs = { 'docs/05-architecture.png': image, 'docs/05-architecture.md': '# 節名\n' };
     const result = check(
       { 'src/a.cpp': 'int value;\n', ...docs },
-      { 'src/a.cpp': '// docs/guide「概要」\n// docs/guide「古い節」\nint value;\n', ...docs },
+      { 'src/a.cpp': '// docs/05「節名」\n// docs/05-architecture「無い節」\nint value;\n', ...docs },
     );
 
     expect(result.warnings).toEqual([expect.objectContaining({ check: 'doc-ref', line: 2 })]);
