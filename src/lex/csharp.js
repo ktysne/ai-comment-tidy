@@ -56,7 +56,7 @@ function freeformDirectiveEnd(source, index) {
   if (lineStart === 0 && prefix.startsWith('\uFEFF')) prefix = prefix.slice(1);
   if (!/^[\t\v\f ]*$/.test(prefix)) return null;
 
-  const directive = /^#[\t ]*(?:region|endregion|error|warning|pragma)(?=$|[\t \r\n])/u.exec(source.slice(index));
+  const directive = /^#[\t ]*(?:region|endregion|error|warning)(?=$|[\t \r\n])/u.exec(source.slice(index));
   if (!directive) return null;
 
   let end = index + directive[0].length;

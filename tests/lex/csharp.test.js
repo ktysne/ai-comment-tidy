@@ -150,9 +150,19 @@ var u = "http://x";`;
     const segments = language.lex(source);
 
     expect(segments.filter((segment) => segment.kind === 'comment').map((segment) => source.slice(segment.start, segment.end)))
-      .toEqual(['// actual comment', '// reason', '// following comment']);
+      .toEqual(['// actual comment', '// pragma text', '// reason', '// following comment']);
     expect(segments.some((segment) => segment.kind === 'code' && source.slice(segment.start, segment.end).includes("#region Player's // region text")))
       .toBe(true);
+  });
+
+  test('#pragma checksum のファイル名を文字列として扱う', () => {
+    const source = '#pragma checksum "a b.cs" "{406EA660-64CF-4C82-B6F0-42D48172A799}" "ab007f1d23d9" // New checksum';
+    const segments = language.lex(source);
+
+    expect(segments.filter((segment) => segment.kind === 'string').map((segment) => source.slice(segment.start, segment.end))[0])
+      .toBe('"a b.cs"');
+    expect(segments.filter((segment) => segment.kind === 'comment').map((segment) => source.slice(segment.start, segment.end)))
+      .toEqual(['// New checksum']);
   });
 
   test('BOM と CRLF を含む入力でコメント区間と末尾位置を保つ', () => {
