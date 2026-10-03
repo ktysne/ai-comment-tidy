@@ -79,6 +79,22 @@ describe('Git の時点の読み取り', () => {
     expect(snapshot.has('link.cpp')).toBe(false);
   });
 
+  test('core.symlinks=false で通常のファイルとして置かれたリンクを作業ツリーの一覧から除く', () => {
+    const root = makeRepo();
+    execFileSync('git', ['-C', root, 'config', 'core.symlinks', 'false']);
+    write(root, 'target.cpp', '// target\n');
+    execFileSync('git', ['-C', root, 'add', 'target.cpp']);
+    const linkObject = execFileSync('git', ['-C', root, 'hash-object', '-w', '--stdin'], { input: 'target.cpp' }).toString('utf8').trim();
+    execFileSync('git', ['-C', root, 'update-index', '--add', '--cacheinfo', `120000,${linkObject},link.cpp`]);
+    execFileSync('git', ['-C', root, 'commit', '--quiet', '-m', 'link']);
+    execFileSync('git', ['-C', root, 'checkout', '--quiet', '--', 'link.cpp']);
+
+    const snapshot = createGitSnapshot(root);
+
+    expect(fs.lstatSync(path.join(root, 'link.cpp')).isFile()).toBe(true);
+    expect(snapshot.listFiles()).toEqual(['target.cpp']);
+  });
+
   test('作業ツリーのシンボリックリンクを一覧から除く', (context) => {
     const root = makeRepo();
     write(root, 'target.cpp', '// target\n');

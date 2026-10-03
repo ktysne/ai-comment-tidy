@@ -36,9 +36,20 @@ function isRegularFile(absolutePath) {
   }
 }
 
+// core.symlinks=false ではリンクが通常のファイルとして置かれるので、追跡中のリンクはインデックスのモードで見分ける。
+function indexedSymlinks(repoRoot) {
+  const symlinks = new Set();
+  for (const entry of nulFields(git(repoRoot, ['ls-files', '--stage', '-z']))) {
+    const separator = entry.indexOf('\t');
+    if (entry.startsWith('120000 ')) symlinks.add(entry.slice(separator + 1));
+  }
+  return symlinks;
+}
+
 function worktreeFiles(repoRoot) {
+  const symlinks = indexedSymlinks(repoRoot);
   return nulFields(git(repoRoot, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']))
-    .filter((filePath) => isRegularFile(path.join(repoRoot, ...filePath.split('/'))));
+    .filter((filePath) => !symlinks.has(filePath) && isRegularFile(path.join(repoRoot, ...filePath.split('/'))));
 }
 
 function committedFiles(repoRoot, ref) {
