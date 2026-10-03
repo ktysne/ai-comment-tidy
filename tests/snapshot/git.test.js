@@ -65,6 +65,16 @@ describe('Git の時点の読み取り', () => {
     expect(contents.get('tail.cpp')).toEqual(Buffer.from('// no newline', 'utf8'));
   });
 
+  test('フィルターを通さない読み取りはコミットの blob を返す', () => {
+    const root = makeRepo();
+    write(root, '.gitattributes', '*.cpp text=auto\n');
+    write(root, 'src/file.cpp', '// committed\n');
+    const commit = commitAll(root);
+    const snapshot = createGitSnapshot(root, resolveCommit(root, commit));
+
+    expect(snapshot.readManyRaw(['src/file.cpp']).get('src/file.cpp')).toEqual(Buffer.from('// committed\n', 'utf8'));
+  });
+
   test('コミットのシンボリックリンクを一覧から除く', () => {
     const root = makeRepo();
     write(root, 'target.cpp', '// target\n');

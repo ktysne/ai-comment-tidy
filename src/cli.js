@@ -1,6 +1,4 @@
-import { runLintCommand } from './lint/command.js';
 import { runInstallHooksCommand } from './install-hooks.js';
-import { runStatsCommand } from './stats/command.js';
 
 /** 終了コードの意味は docs/design.md「コマンド」が正本。 */
 export const EXIT_OK = 0;
@@ -55,6 +53,7 @@ async function readProcessStdin() {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-commands.set('lint', runLintCommand);
-commands.set('stats', runStatsCommand);
+commands.set('lint', async (...args) => (await import('./lint/command.js')).runLintCommand(...args));
+commands.set('stats', async (...args) => (await import('./stats/command.js')).runStatsCommand(...args));
+commands.set('check', async (...args) => (await import('./check/command.js')).runCheckCommand(...args));
 commands.set('install-hooks', runInstallHooksCommand);

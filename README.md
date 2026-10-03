@@ -134,6 +134,26 @@ node bin/comment-tidy.js stats --repo <dir> --out current.json
 node bin/comment-tidy.js stats --compare before=before.json after=current.json
 ```
 
+### 束の変更を検査する
+
+`check` は、担当ファイルのコードが基準と同じこと、担当外のファイルに変更が無いこと、コメントの行数と行末が規則に合うことを検査します。
+
+Git を使う場合は基準コミットを指定します。
+
+```bash
+node bin/comment-tidy.js check --repo <作業ツリー> --base <コミット> --files src/a.cpp src/b.js
+```
+
+実行者の sandbox から検査するときは、基準の写しとハッシュ一覧を指定します。
+この経路は Git や子プロセスを起動しません。
+
+```bash
+node bin/comment-tidy.js check --offline --repo <作業ツリー> --base-dir <基準の写し> --hashes <ハッシュ一覧> --files src/a.cpp src/b.js
+```
+
+行幅と資料の参照は警告として報告し、終了コードは不合格が 1 件以上なら 1、検査に通れば 0、引数や設定の誤りなら 2 です。
+Git を使う経路では、`--out <ファイル>` を指定すると検査結果を JSON で保存します。
+
 ### リポジトリごとの設定
 
 設定ファイルが無いリポジトリでも、既定値で動きます。
@@ -163,7 +183,7 @@ node bin/comment-tidy.js stats --compare before=before.json after=current.json
 |---|---|---|
 | 0 | 準備 | 済み |
 | 1a | 字句解析、`lint`、フックの入口、`install-hooks` | 済み |
-| 1b | `stats`(集計)と `check`(コメント以外が変わっていないことの検査) | 1b-1 済み、1b-2 未着手 |
+| 1b | `stats`(集計)と `check`(コメント以外が変わっていないことの検査) | 1b-1 済み、1b-2 済み |
 | 2〜9 | 設定と束、実行と取り込み、監査、仕上げの道具、スキルと資料、試行 | 未着手 |
 
 整理の回のコマンド(`init`、`plan`、`run`、`apply` など)は、まだありません。
@@ -195,7 +215,10 @@ src/
 ├── cli.js            サブコマンドの振り分け
 ├── lex/              言語ごとの字句解析
 ├── comment-blocks.js コメントのブロックと行数の数え方
+├── docs-refs.js      資料の参照と見出しの照合
+├── check/            束の変更、コメント、行末、行幅の検査
 ├── lint/             lint の規則、報告の絞り込み、フックの入口、設定の読み込み
+├── snapshot/         Git、作業ツリー、写しの読み取り
 └── install-hooks.js  フックの登録と削除
 tests/                vitest のテスト
 docs/

@@ -2,6 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const DEFAULT_MAX_COMMENT_LINES = 3;
+export const DEFAULT_MAX_LINE_WIDTH = 108;
+export const DEFAULT_DOCS_CONFIG = Object.freeze({
+  root: 'docs',
+  refPattern: 'docs/(?<doc>[\\w.-]+)「(?<heading>[^」]+)」',
+});
 export const DEFAULT_LICENSE_PATTERNS = Object.freeze([
   'Copyright',
   'SPDX-License-Identifier',
@@ -22,6 +27,8 @@ function isRecord(value) {
 function cloneDefaults() {
   return {
     maxCommentLines: DEFAULT_MAX_COMMENT_LINES,
+    maxLineWidth: DEFAULT_MAX_LINE_WIDTH,
+    docs: { ...DEFAULT_DOCS_CONFIG },
     licensePatterns: [...DEFAULT_LICENSE_PATTERNS],
     scope: { exclude: [...DEFAULT_SCOPE_EXCLUDES] },
     lint: { enabled: true, allow: [] },
@@ -55,8 +62,8 @@ function readConfig(configPath) {
   }
 }
 
-export function loadLintConfig(repoRoot) {
-  const configPath = path.join(repoRoot, '.comment-tidy', 'config.json');
+export function loadLintConfig(repoRoot, configFilePath = path.join(repoRoot, '.comment-tidy', 'config.json')) {
+  const configPath = path.resolve(configFilePath);
   const source = readConfig(configPath);
   if (source === null) return cloneDefaults();
   if (!isRecord(source)) throw new Error('設定のルートはオブジェクトで指定してください');
@@ -67,6 +74,34 @@ export function loadLintConfig(repoRoot) {
       throw new Error('maxCommentLines は 1 以上の整数で指定してください');
     }
     config.maxCommentLines = source.maxCommentLines;
+  }
+
+  if (Object.hasOwn(source, 'maxLineWidth')) {
+    if (!Number.isInteger(source.maxLineWidth) || source.maxLineWidth < 1) {
+      throw new Error('maxLineWidth は 1 以上の整数で指定してください');
+    }
+    config.maxLineWidth = source.maxLineWidth;
+  }
+
+  if (Object.hasOwn(source, 'docs')) {
+    if (!isRecord(source.docs)) throw new Error('docs はオブジェクトで指定してください');
+    if (Object.hasOwn(source.docs, 'root')) {
+      const root = source.docs.root;
+      const segments = typeof root === 'string' ? root.replace(/\\/g, '/').split('/') : [];
+      if (typeof root !== 'string' || root.length === 0 || path.isAbsolute(root) || path.win32.isAbsolute(root)
+        || segments.some((segment) => segment === '..' || segment === '')) {
+        throw new Error('docs.root は空でないパス文字列で指定してください');
+      }
+      config.docs.root = root;
+    }
+    if (Object.hasOwn(source.docs, 'refPattern')) {
+      const pattern = source.docs.refPattern;
+      validatePattern(pattern, 'docs.refPattern');
+      if (!pattern.includes('(?<doc>') || !pattern.includes('(?<heading>')) {
+        throw new Error('docs.refPattern は doc と heading の名前付き捕捉を持つ必要があります');
+      }
+      config.docs.refPattern = pattern;
+    }
   }
 
   if (Object.hasOwn(source, 'licensePatterns')) {
