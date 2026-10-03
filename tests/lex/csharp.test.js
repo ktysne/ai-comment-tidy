@@ -78,6 +78,16 @@ var s = "it's http://example.com/v1 2024-01-01";`;
       .toEqual(['var text = ', 'x', ';']);
   });
 
+  test('複数ドルの補間生文字列で、指定数より多く並んだ波括弧の余りを文字列の内容にする', () => {
+    const source = 'var text = $$"""{{{x}}}""";';
+    const segments = language.lex(source);
+
+    expect(segments.filter((segment) => segment.kind === 'string').map((segment) => source.slice(segment.start, segment.end)))
+      .toEqual(['$$"""{{{', '}}', '}"""']);
+    expect(segments.filter((segment) => segment.kind === 'code').map((segment) => source.slice(segment.start, segment.end)))
+      .toEqual(['var text = ', 'x', ';']);
+  });
+
   test('複数ドルの補間生文字列を閉じて後続のコメントを解析する', () => {
     const source = `var j = $$"""
 { it's }
@@ -152,6 +162,15 @@ var u = "http://x";`;
     expect(segments.filter((segment) => segment.kind === 'comment').map((segment) => source.slice(segment.start, segment.end)))
       .toEqual(['// note', '// t']);
     expect(segments.at(-1)?.end).toBe(source.length);
+  });
+
+  test('BOM の直後の指示子の行と、CRLF の行末で閉じていない文字列を扱う', () => {
+    const source = '﻿#region Player\'s\r\nvar c = \'a\r\nvar s = "x\r\nint a; // c\r\n';
+    const segments = language.lex(source);
+    const textsOf = (kind) => segments.filter((segment) => segment.kind === kind).map((segment) => source.slice(segment.start, segment.end));
+
+    expect(textsOf('string')).toEqual(['\'a', '"x']);
+    expect(textsOf('comment')).toEqual(['// c']);
   });
 
   test('C# の拡張子と区切り線の正規表現を公開する', () => {

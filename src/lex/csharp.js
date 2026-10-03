@@ -154,6 +154,8 @@ function lexCSharp(source) {
           index += braceRun;
           continue;
         }
+        // 並んだ波括弧のうち補間を開くのは最後の N 個で、手前の余りは文字列の内容である。
+        index += braceRun - interpolationBraceCount;
 
         addSegment('string', chunkStart, index + interpolationBraceCount);
         const expressionEnd = scanCode(index + interpolationBraceCount, true, interpolationBraceCount);
