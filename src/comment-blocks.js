@@ -10,7 +10,7 @@ function lineStartsOf(source) {
 
 function commentBody(text, languageId, closingMarker) {
   let body = text;
-  if (languageId === 'cpp' || languageId === 'csharp' || languageId === 'js') {
+  if (languageId === 'cpp' || languageId === 'csharp' || languageId === 'js' || languageId === 'ts') {
     if (body === '/**/') return '';
     // `//` の後ろは 1 文字だけ除く。全部除くと `//////////` の飾りの行が空になり、行数から漏れる。
     body = body.replace(/^\/\/[/!]?<?/, '').replace(/^\/\*+!?<?/, '');

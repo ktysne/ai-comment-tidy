@@ -1,10 +1,11 @@
 import { language as cpp } from './cpp.js';
 import { language as csharp } from './csharp.js';
 import { language as js } from './js.js';
+import { language as ts } from './typescript.js';
 import { language as cmake } from './cmake.js';
 import { language as bat } from './bat.js';
 
-export const languages = [cpp, csharp, js, cmake, bat];
+export const languages = [cpp, csharp, js, ts, cmake, bat];
 
 export function languageOf(filePath) {
   const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
