@@ -1,6 +1,13 @@
 const isIdentifierCharacter = (character) => character !== undefined && /[A-Za-z0-9_$]/.test(character);
 const REGEX_PRECEDING_KEYWORDS = ['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await'];
 
+function endsWithTsNonNullAssertion(code) {
+  const match = /(\.\s*)?(?:([A-Za-z_$][A-Za-z0-9_$]*)|[)\]])(?:\s*!)+$/.exec(code);
+  if (!match) return false;
+  const [, propertyAccess, word] = match;
+  return propertyAccess !== undefined || !REGEX_PRECEDING_KEYWORDS.includes(word);
+}
+
 export function lexCppLike(source, options) {
   const isJavaScriptLike = options.language === 'js' || options.language === 'ts';
   const segments = [];
@@ -9,6 +16,7 @@ export function lexCppLike(source, options) {
   const sourceLength = source.length;
   let lastSignificant = '';
   let lastWord = '';
+  let lastCodeText = '';
   const templateDepth = [];
 
   const flushCode = (end) => {
@@ -16,6 +24,7 @@ export function lexCppLike(source, options) {
       segments.push({ kind: 'code', start: codeStart, end });
       const text = source.slice(codeStart, end).replace(/\s+$/, '');
       if (text.length) {
+        lastCodeText = text;
         lastSignificant = text[text.length - 1];
         const word = /([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(text);
         lastWord = word ? word[1] : '';
@@ -59,9 +68,9 @@ export function lexCppLike(source, options) {
         const word = /([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(pending);
         lastWord = word ? word[1] : '';
       }
-      const beforeBang = /(?:([A-Za-z_$][A-Za-z0-9_$]*)|[)\]])\s*!\s*$/.exec(pending);
-      const isTsNonNullAssertion = options.language === 'ts' && beforeBang !== null
-        && !REGEX_PRECEDING_KEYWORDS.includes(beforeBang[1]);
+      // 間にコメントがあると pending は空になるので、コメントの前のコードで判定する。文字列の後は lastSignificant が '"' になる。
+      const precedingCode = pending.length ? pending : (lastSignificant === '"' ? '' : lastCodeText);
+      const isTsNonNullAssertion = options.language === 'ts' && endsWithTsNonNullAssertion(precedingCode);
       const regexAllowed = !isTsNonNullAssertion && (
         lastSignificant === '' || '(,=:[!&|?{};+-*%<>~^'.includes(lastSignificant)
         || REGEX_PRECEDING_KEYWORDS.includes(lastWord)

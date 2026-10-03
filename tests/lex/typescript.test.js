@@ -22,6 +22,18 @@ describe('TypeScript の字句解析', () => {
       .map((segment) => negatedRegex.slice(segment.start, segment.end))).toEqual(['// c']);
   });
 
+  test('コメントを挟んだ非 null 表明、重ねた !、キーワードと同じ名前のプロパティの後の / を割り算として読む', () => {
+    for (const source of [
+      'const r = a! /* note */ / b; // #12',
+      'const r = a!! / b; // #12',
+      'const r = obj.return! / b; // #12',
+    ]) {
+      expect(language.lex(source).filter((segment) => segment.kind === 'comment').map((segment) => source.slice(segment.start, segment.end)).at(-1))
+        .toBe('// #12');
+      expect(language.lex(source).some((segment) => segment.kind === 'string')).toBe(false);
+    }
+  });
+
   test('return などのキーワードの後の ! は非 null 表明にせず、続く正規表現を読む', () => {
     // 正規表現の中に /* を置き、割り算と読み誤るとブロックコメントが後ろのコードを飲み込む形にする。
     const source = 'function g(s: string) { return !/[/*]/.test(s); } const x = 1; // c';
