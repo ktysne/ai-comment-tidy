@@ -72,6 +72,7 @@ describe('コメント規則', () => {
 
   test('言語ごとの区切り線を確定違反として検出する', () => {
     expect(violations('// ----------------', 'file.cpp').map(({ ruleId }) => ruleId)).toEqual(['separator']);
+    expect(violations('//////////', 'file.cs').map(({ ruleId }) => ruleId)).toEqual(['separator']);
     expect(violations('//////////\n// heading\n// body', 'file.js').map(({ ruleId }) => ruleId)).toContain('separator');
     expect(violations('# ----------------', 'file.cmake').map(({ ruleId }) => ruleId)).toEqual(['separator']);
     expect(violations('rem ----------------', 'file.bat').map(({ ruleId }) => ruleId)).toEqual(['separator']);
@@ -208,6 +209,11 @@ describe('コメント規則', () => {
     expect(violations('// 2026-10-02', 'file.js').map(({ ruleId }) => ruleId)).toEqual(['date']);
     expect(violations('# フェーズ 2', 'file.cmake').map(({ ruleId }) => ruleId)).toEqual(['work-note']);
     expect(violations('rem TODO: later', 'file.bat').map(({ ruleId }) => ruleId)).toEqual(['todo-no-ticket']);
+  });
+
+  test('C# のコメントだけを検査し、文字列内の Issue 番号を無視する', () => {
+    expect(violations('// #12', 'file.cs').map(({ ruleId }) => ruleId)).toEqual(['issue-ref']);
+    expect(violations('var text = "// #12";', 'file.cs')).toEqual([]);
   });
 
   test('ライセンスとツール注記だけのブロックを全規則から除外する', () => {
