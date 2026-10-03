@@ -52,11 +52,15 @@ describe('comment-tidy の入口', () => {
     }
   });
 
-  test('lint は --hook を引数の誤りとして 2 で終える', async () => {
+  test('lint は未対応のフック名を引数の誤りとして 2 で終える', async () => {
     const { err } = capture();
-    expect(await run(['lint', '--hook', 'post-edit'], { stderr: (text) => err.push(text), stdout: () => {} }))
+    expect(await run(['lint', '--hook', 'unknown'], {
+      stderr: (text) => err.push(text),
+      stdout: () => {},
+      readStdin: async () => '',
+    }))
       .toBe(EXIT_USAGE);
-    expect(err.join('\n')).toContain('--hook');
+    expect(err.join('\n')).toContain('unknown');
   });
 
   test('run はコマンドの例外を一行で知らせて 2 で終える', async () => {

@@ -2,9 +2,15 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+
+vi.mock('../../src/lint/rules.js', async (importOriginal) => {
+  const rules = await importOriginal();
+  return { ...rules, findViolations: vi.fn(rules.findViolations) };
+});
 
 import { lintRepository } from '../../src/lint/run.js';
+import { findViolations } from '../../src/lint/rules.js';
 
 const roots = [];
 
@@ -54,6 +60,46 @@ describe('lintRepository', () => {
     expect(result.files[0].violations.map(({ ruleId }) => ruleId)).toEqual(['issue-ref', 'todo-no-ticket']);
   });
 
+  test('changed で未追跡ファイルを除外する指定を扱う', () => {
+    const root = makeRepo();
+    write(root, 'tracked.cpp', '// safe\n');
+    commitAll(root);
+    write(root, 'tracked.cpp', '// #12\n');
+    write(root, 'untracked.cpp', '// #34\n');
+
+    const result = lintRepository({ repoRoot: root, mode: 'changed', includeUntracked: false });
+
+    expect(result.confirmed).toBe(1);
+    expect(result.files.map(({ path: filePath }) => filePath)).toEqual(['tracked.cpp']);
+  });
+
+  test('pathspec 内のワイルドカード文字を文字どおりに扱う', () => {
+    const root = makeRepo();
+    write(root, 'folder/[literal].cpp', '// safe\n');
+    commitAll(root);
+    write(root, 'folder/[literal].cpp', '// #73\n');
+
+    const result = lintRepository({ repoRoot: root, mode: 'changed', pathspecs: ['folder/[literal].cpp'] });
+
+    expect(result.files.map(({ path: filePath }) => filePath)).toEqual(['folder/[literal].cpp']);
+    expect(result.confirmed).toBe(1);
+  });
+
+  test('変更のないファイルが多いフォルダーでは変更ファイルだけを検査する', () => {
+    const root = makeRepo();
+    for (let index = 0; index < 200; index++) write(root, `folder/stable-${index}.cpp`, '// safe\n');
+    write(root, 'folder/changed.cpp', '// safe\n');
+    commitAll(root);
+    write(root, 'folder/changed.cpp', '// #73\n');
+    findViolations.mockClear();
+
+    const result = lintRepository({ repoRoot: root, mode: 'changed', pathspecs: ['folder'] });
+
+    expect(result.files.map(({ path: filePath }) => filePath)).toEqual(['folder/changed.cpp']);
+    expect(result.confirmed).toBe(1);
+    expect(findViolations).toHaveBeenCalledTimes(2);
+  });
+
   test('staged はインデックスの内容を読み、作業ツリーの未登録変更を読まない', () => {
     const root = makeRepo();
     write(root, 'src/staged.cpp', '// safe\n');
@@ -68,6 +114,18 @@ describe('lintRepository', () => {
     execFileSync('git', ['-C', root, 'add', '--', 'src/staged.cpp']);
     write(root, 'src/staged.cpp', '// #789\n');
     expect(lintRepository({ repoRoot: root, mode: 'staged' })).toEqual({ files: [], confirmed: 0, review: 0 });
+  });
+
+  test('staged の変更一覧を pathspec で絞る', () => {
+    const root = makeRepo();
+    write(root, 'selected/inside.cpp', '// #73\n');
+    write(root, 'outside.cpp', '// #99\n');
+    execFileSync('git', ['-C', root, 'add', '--all']);
+
+    const result = lintRepository({ repoRoot: root, mode: 'staged', pathspecs: ['selected'] });
+
+    expect(result.files.map(({ path: filePath }) => filePath)).toEqual(['selected/inside.cpp']);
+    expect(result.confirmed).toBe(1);
   });
 
   test('空白、セミコロン、アンパサンドを含むファイル名を扱う', () => {
@@ -168,6 +226,30 @@ describe('lintRepository', () => {
     const result = lintRepository({ mode: 'files', files: ['file.cpp'], baseDirectory: path.join(root, 'src', 'deep') });
     expect(result.files.map(({ path: filePath }) => filePath)).toEqual(['src/deep/file.cpp']);
     expect(result.confirmed).toBe(1);
+  });
+
+  test('staged-with-worktree は範囲の中で作業ツリーから消えたファイルを飛ばし、残りを検査する', () => {
+    const root = makeRepo();
+    write(root, 'src/gone.cpp', 'int gone = 1;\n');
+    write(root, 'src/kept.cpp', 'int kept = 1;\n');
+    commitAll(root);
+    fs.rmSync(path.join(root, 'src', 'gone.cpp'));
+    write(root, 'src/kept.cpp', '// #5\nint kept = 1;\n');
+
+    expect(lintRepository({ repoRoot: root, mode: 'staged-with-worktree', pathspecs: ['src'] }))
+      .toMatchObject({ confirmed: 1, review: 0 });
+  });
+
+  test('範囲の外から範囲の中へ移したファイルは、移す前の内容と比べる', () => {
+    const root = makeRepo();
+    write(root, 'old.cpp', '// #42\nint value = 1;\n');
+    commitAll(root);
+    fs.mkdirSync(path.join(root, 'src'));
+    execFileSync('git', ['-C', root, 'mv', 'old.cpp', 'src/new.cpp']);
+
+    const empty = { files: [], confirmed: 0, review: 0 };
+    expect(lintRepository({ repoRoot: root, mode: 'staged-with-worktree', pathspecs: ['src'] })).toEqual(empty);
+    expect(lintRepository({ repoRoot: root, mode: 'changed', pathspecs: ['src'], includeUntracked: false })).toEqual(empty);
   });
 
   test('コミットが無いリポジトリでも追加ファイルを検査する', () => {

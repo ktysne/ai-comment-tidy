@@ -1,4 +1,5 @@
 import { runLintCommand } from './lint/command.js';
+import { runInstallHooksCommand } from './install-hooks.js';
 
 /** 終了コードの意味は docs/design.md「コマンド」が正本。 */
 export const EXIT_OK = 0;
@@ -24,6 +25,7 @@ function usage() {
 export async function run(argv, io = {}) {
   const stdout = io.stdout ?? ((text) => process.stdout.write(`${text}\n`));
   const stderr = io.stderr ?? ((text) => process.stderr.write(`${text}\n`));
+  const readStdin = io.readStdin ?? readProcessStdin;
   const [name, ...rest] = argv;
 
   if (name === undefined || name === 'help' || name === '--help') {
@@ -37,7 +39,7 @@ export async function run(argv, io = {}) {
     return EXIT_USAGE;
   }
   try {
-    return await command(rest, { stdout, stderr });
+    return await command(rest, { stdout, stderr, readStdin });
   } catch (error) {
     const detail = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim();
     stderr(`コマンドの実行に失敗しました: ${detail || '原因不明のエラー'}`);
@@ -45,4 +47,12 @@ export async function run(argv, io = {}) {
   }
 }
 
+async function readProcessStdin() {
+  if (process.stdin.isTTY) return '';
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 commands.set('lint', runLintCommand);
+commands.set('install-hooks', runInstallHooksCommand);
