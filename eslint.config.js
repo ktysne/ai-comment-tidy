@@ -22,4 +22,13 @@ export default [
       globals: globals.node,
     },
   },
+  {
+    files: ['src/check/**/*.js', 'src/snapshot/fs.js'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: ['node:child_process'],
+        patterns: [{ group: ['**/snapshot/git.js'], message: 'この領域では Git の読み取りを使えません。' }],
+      }],
+    },
+  },
 ];
