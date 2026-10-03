@@ -25,9 +25,20 @@ function normalizePath(filePath) {
   return filePath.replace(/\\/g, '/');
 }
 
+// シンボリックリンクを両方の時点で除く理由は docs/design.md「時点の読み取り」にある。
+const REGULAR_FILE_MODES = new Set(['100644', '100755']);
+
+function isRegularFile(absolutePath) {
+  try {
+    return fs.lstatSync(absolutePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function worktreeFiles(repoRoot) {
   return nulFields(git(repoRoot, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']))
-    .filter((filePath) => fs.existsSync(path.join(repoRoot, ...filePath.split('/'))));
+    .filter((filePath) => isRegularFile(path.join(repoRoot, ...filePath.split('/'))));
 }
 
 function committedFiles(repoRoot, ref) {
@@ -36,7 +47,7 @@ function committedFiles(repoRoot, ref) {
   for (const entry of nulFields(entries)) {
     const separator = entry.indexOf('\t');
     const [mode, type, objectId] = entry.slice(0, separator).split(' ');
-    if (type === 'blob' && mode) files.set(normalizePath(entry.slice(separator + 1)), objectId);
+    if (type === 'blob' && REGULAR_FILE_MODES.has(mode)) files.set(normalizePath(entry.slice(separator + 1)), objectId);
   }
   return files;
 }

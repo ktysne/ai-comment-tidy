@@ -65,6 +65,34 @@ describe('Git の時点の読み取り', () => {
     expect(contents.get('tail.cpp')).toEqual(Buffer.from('// no newline', 'utf8'));
   });
 
+  test('コミットのシンボリックリンクを一覧から除く', () => {
+    const root = makeRepo();
+    write(root, 'target.cpp', '// target\n');
+    execFileSync('git', ['-C', root, 'add', 'target.cpp']);
+    const linkObject = execFileSync('git', ['-C', root, 'hash-object', '-w', '--stdin'], { input: 'target.cpp' }).toString('utf8').trim();
+    execFileSync('git', ['-C', root, 'update-index', '--add', '--cacheinfo', `120000,${linkObject},link.cpp`]);
+    execFileSync('git', ['-C', root, 'commit', '--quiet', '-m', 'link']);
+
+    const snapshot = createGitSnapshot(root, resolveCommit(root, 'HEAD'));
+
+    expect(snapshot.listFiles()).toEqual(['target.cpp']);
+    expect(snapshot.has('link.cpp')).toBe(false);
+  });
+
+  test('作業ツリーのシンボリックリンクを一覧から除く', (context) => {
+    const root = makeRepo();
+    write(root, 'target.cpp', '// target\n');
+    try {
+      fs.symlinkSync('target.cpp', path.join(root, 'link.cpp'), 'file');
+    } catch {
+      context.skip();
+    }
+
+    const snapshot = createGitSnapshot(root);
+
+    expect(snapshot.listFiles()).toEqual(['target.cpp']);
+  });
+
   test('作業ツリーの一覧は未追跡ファイルを含み、削除済みファイルを除く', () => {
     const root = makeRepo();
     write(root, '.gitignore', 'ignored.cpp\n');

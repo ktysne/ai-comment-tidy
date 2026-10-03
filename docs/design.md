@@ -253,7 +253,8 @@ export const language = {
 ## 時点の読み取り
 
 `stats` と `check` は、比べる時点を同じ形の読み取り口で扱う。
-読み取り口は `listFiles()`(リポジトリからの相対パスを `/` 区切りで返す)、`read(path)`(内容を Buffer で返す)、`has(path)` を持つ。
+読み取り口は `listFiles()`(リポジトリからの相対パスを `/` 区切りで返す)、`read(path)`(内容を Buffer で返す)、`readMany(paths)`(パスから Buffer への Map を返す)、`has(path)` を持つ。
+コミットは `readMany` で 1 回の `cat-file` にまとめて読む。ファイルごとに git を起動すると、数千のファイルで数十秒かかるためである。
 Buffer で返すのは、行末と UTF-8 の検査を呼び出し側の 1 か所で行うためである。
 
 | 実装 | 一覧 | 内容 | 置き場 |
@@ -264,6 +265,7 @@ Buffer で返すのは、行末と UTF-8 の検査を呼び出し側の 1 か所
 
 コミットの内容は、`--filters` でチェックアウトと同じ行末の変換(`text=auto`、`core.autocrlf`、`.gitattributes` の `eol`)を通して読む。
 blob のまま読むと、変換が効くリポジトリでは比較元が LF、作業ツリーが CRLF になり、行末の検査がコメントだけの変更でも不合格になるためである。
+シンボリックリンクは、コミットと作業ツリーのどちらでも一覧から除く。コミットではリンク先のパスが、作業ツリーではリンク先の内容が読まれ、変更が無くても時点の間で食い違うためである。
 `node:child_process` を読み込むのは `src/snapshot/git.js` だけにする。
 `check` のモジュールは `git.js` を静的に読み込まず、`--offline` でないときだけ動的に読み込む。
 eslint の `no-restricted-imports` で、`src/check/` と `src/snapshot/fs.js` から `node:child_process` と `git.js` を読み込むことを禁じる。
