@@ -28,6 +28,8 @@ const RULES = [
     ruleId: 'date',
     severity: 'confirmed',
     pattern: /20\d{2}-\d{2}-\d{2}|20\d{2}\/\d{1,2}\/\d{1,2}|20\d{2} ?年 ?\d{1,2} ?月/,
+    ignoreMatch: (body, index, length) => isDatePath(body, index, length)
+      || isInsideJapaneseQuotedHeading(body, index, length),
     hint: '日付をコメントから削除する。',
   },
   {
@@ -38,13 +40,13 @@ const RULES = [
   {
     ruleId: 'history',
     severity: 'review',
-    pattern: /以前は|以前の|以前と|従来(の|は|どおり|と)|もともとは|元々は|当初|最初は|今では|かつて|旧実装|旧来|リリース前|移設(で|の|前)|統合した際|限定前/,
+    pattern: /以前は|以前と|従来(の|は|どおり|と)|もともとは|元々は|当初|今では|かつて|旧実装|旧来|移設(で|の|前)|統合した際|限定前/,
     hint: '現在も必要な制約として書き直す。',
   },
   {
     ruleId: 'change-log',
     severity: 'review',
-    pattern: /に変えた|へ変えた|をやめた|を廃止|に直した|を直した|修正した|変更した|追加した(?!ばかり)|削除した(?!後)|入れ替えた|置き換えた|移した(?!先)|になったので|になったため|ようになったので|なくなったので|していた(?!だ)|だった(?!とき)|ていた。/,
+    pattern: /(?:に変えた|へ変えた|をやめた|を廃止した|に直した|を直した|修正した|変更した|追加した|削除した|入れ替えた|置き換えた|移した)(?=\s*(?:ので|ため|[。．.)）]|$))|ようになった(?:ので|ため)|なくなったので/,
     hint: '変更の記録を削除し、現在の仕様と理由を書く。',
   },
   {
@@ -52,10 +54,12 @@ const RULES = [
     severity: 'review',
     patterns: [
       /相互レビュー|レビュー(指摘|指定|の例|で追加|の提案|で決めた)|利用者指摘|ユーザー(指摘|要望|報告|調整依頼)|実機確認|ユーザー確定/,
-      /しようとした|消したかった|削ろうとした|直したかった|狙う削減|この ?PR|今回の(変更|修正|対応|作業)/,
-      /(^|[^A-Za-z])M[0-6](?![0-9A-Za-z])|段階 ?[0-9]|フェーズ ?[0-9]/,
+      /消したかった|削ろうとした|直したかった|狙う削減|この ?PR|今回の(変更|修正|対応|作業)/,
+      /(?<![A-Za-z])M[0-6](?![0-9A-Za-z])|段階 ?[0-9]|フェーズ ?[0-9]/,
       /ステップ ?[0-9]/,
     ],
+    ignoreMatch: (body, index, length, text) => isMilestoneLabel(text)
+      && (isInsideJapaneseQuotedHeading(body, index, length) || isDocsPathReference(body, index)),
     hint: 'レビューや作業の記録を削除し、現在の仕様と理由を書く。',
   },
   {
@@ -129,10 +133,17 @@ function isAllowedHit(patterns, body, matchIndex, matchLength) {
   });
 }
 
-function firstMatch(patterns, text) {
+function firstMatch(patterns, text, ignoreMatch) {
   for (const pattern of patterns) {
-    const match = pattern.exec(text);
-    if (match) {
+    const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+    const searchingPattern = new RegExp(pattern.source, flags);
+    let match = searchingPattern.exec(text);
+    while (match) {
+      if (ignoreMatch?.(match.index, match[0].length, match[0])) {
+        searchingPattern.lastIndex = match.index + Math.max(match[0].length, 1);
+        match = searchingPattern.exec(text);
+        continue;
+      }
       const leadingWhitespace = match[0].length - match[0].trimStart().length;
       const trimmed = match[0].trim();
       return { text: trimmed, index: match.index + leadingWhitespace, length: trimmed.length };
@@ -141,18 +152,56 @@ function firstMatch(patterns, text) {
   return null;
 }
 
-function firstMatchInBodies(patterns, bodies) {
-  for (const body of bodies) {
-    const match = firstMatch(patterns, body);
+function firstMatchInBodies(patterns, bodies, ignoreMatch) {
+  for (const [bodyIndex, body] of bodies.entries()) {
+    const match = firstMatch(patterns, body, (index, length, text) => ignoreMatch?.(bodyIndex, index, length, text));
     if (match) return { ...match, body };
   }
   return null;
 }
 
-/**
- * @param {string[]} bodies 行を改行でつないだ本文と、改行を詰めた本文。前者を先に調べる
- */
-function matchRule(rule, block, bodies, countedLines, language) {
+function isInsideJapaneseQuotedHeading(body, index, length) {
+  const lineStart = body.lastIndexOf('\n', index - 1) + 1;
+  const lineEndIndex = body.indexOf('\n', index);
+  const lineEnd = lineEndIndex === -1 ? body.length : lineEndIndex;
+  if (index + length > lineEnd) return false;
+
+  const openQuote = body.lastIndexOf('「', index);
+  const closeQuoteBeforeMatch = body.lastIndexOf('」', index);
+  const closeQuote = body.indexOf('」', index + length);
+  return openQuote >= lineStart
+    && openQuote > closeQuoteBeforeMatch
+    && closeQuote !== -1
+    && closeQuote < lineEnd;
+}
+
+function isDatePath(body, index, length) {
+  const lineEndIndex = body.indexOf('\n', index);
+  const lineEnd = lineEndIndex === -1 ? body.length : lineEndIndex;
+  return (index > 0 && /[\\/]/.test(body[index - 1]))
+    || (index + length + 1 < lineEnd
+      && body[index + length] === '.'
+      && /[A-Za-z]/.test(body[index + length + 1]));
+}
+
+function isMilestoneLabel(text) {
+  return /^(?:M[0-6]|(?:段階|フェーズ|ステップ) ?[0-9])$/.test(text);
+}
+
+function isDocsPathReference(body, index) {
+  const lineStart = body.lastIndexOf('\n', index - 1) + 1;
+  return /(?:^|[\s(（「])docs\/\S+ ?$/.test(body.slice(lineStart, index));
+}
+
+function compactedBodyIndexMap(body) {
+  const indexes = [];
+  for (let index = 0; index < body.length; index++) {
+    if (body[index] !== '\n') indexes.push(index);
+  }
+  return indexes;
+}
+
+function matchRule(rule, block, bodies, countedLines, language, compactedIndexMap) {
   const [linedBody] = bodies;
   if (rule.ruleId === 'length') {
     if (countedLines <= 0 || countedLines <= rule.maxCommentLines) return null;
@@ -179,7 +228,15 @@ function matchRule(rule, block, bodies, countedLines, language) {
   // 改行でつないだ本文だけだと、折り返しで 2 行に分かれた語を拾えない。
   // 詰めた本文だけだと、行末の `#123` が次の行の数字とつながって外れる。
   const patterns = rule.patterns ?? (rule.pattern ? [rule.pattern] : []);
-  return firstMatchInBodies(patterns, bodies);
+  return firstMatchInBodies(patterns, bodies, rule.ignoreMatch
+    ? (bodyIndex, index, length, text) => {
+      const sourceIndex = bodyIndex === 0 ? index : compactedIndexMap[index];
+      const sourceEnd = bodyIndex === 0
+        ? index + length
+        : compactedIndexMap[index + length - 1] + 1;
+      return rule.ignoreMatch(bodies[0], sourceIndex, sourceEnd - sourceIndex, text);
+    }
+    : undefined);
 }
 
 export function findViolations(filePath, source, options = {}) {
@@ -198,6 +255,7 @@ export function findViolations(filePath, source, options = {}) {
   for (const block of commentBlocks(filePath, source)) {
     const body = block.text;
     const ruleBody = body.replace(/\n/g, '');
+    const compactedIndexMap = compactedBodyIndexMap(body);
     if (licensePatterns.some((pattern) => pattern.test(ruleBody))) continue;
     if (block.lines.length > 0 && block.lines.every(({ text }) => TOOL_ANNOTATION_PATTERN.test(text))) continue;
 
@@ -205,7 +263,14 @@ export function findViolations(filePath, source, options = {}) {
     for (const rule of RULES) {
       // 行を改行でつないだ本文を先に調べる。詰めた本文だけだと、行末の `#123` が次の行の数字とつながって外れる。
       // 詰めた本文は、折り返しで 2 行に分かれた語を拾うために調べる。
-      const match = matchRule({ ...rule, maxCommentLines }, block, [body, ruleBody], countedLines, language);
+      const match = matchRule(
+        { ...rule, maxCommentLines },
+        block,
+        [body, ruleBody],
+        countedLines,
+        language,
+        compactedIndexMap,
+      );
       if (!match || isAllowedHit(allowPatterns, match.body, match.index, match.length)) continue;
       violations.push({
         ruleId: rule.ruleId,
