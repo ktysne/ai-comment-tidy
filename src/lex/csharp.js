@@ -1,12 +1,16 @@
 function csharpStringStart(source, index) {
   let prefixEnd = index;
-  let interpolated = false;
+  let dollarCount = 0;
+  while (source[prefixEnd] === '$') {
+    dollarCount++;
+    prefixEnd++;
+  }
+  let interpolated = dollarCount > 0;
   let verbatim = false;
 
-  if (source[index] === '$') {
-    interpolated = true;
-    prefixEnd++;
+  if (dollarCount > 0) {
     if (source[prefixEnd] === '@') {
+      if (dollarCount > 1) return null;
       verbatim = true;
       prefixEnd++;
     }
@@ -15,6 +19,7 @@ function csharpStringStart(source, index) {
     prefixEnd++;
     if (source[prefixEnd] === '$') {
       interpolated = true;
+      dollarCount = 1;
       prefixEnd++;
     }
   }
@@ -28,6 +33,7 @@ function csharpStringStart(source, index) {
     while (source[prefixEnd + quoteCount] === '"') quoteCount++;
   }
   const raw = quote === '"' && quoteCount >= 3;
+  if (dollarCount > 1 && !raw) return null;
 
   return {
     start: index,
@@ -37,7 +43,25 @@ function csharpStringStart(source, index) {
     raw,
     interpolated,
     verbatim,
+    interpolationBraceCount: raw ? dollarCount : 1,
   };
+}
+
+function freeformDirectiveEnd(source, index) {
+  if (source[index] !== '#') return null;
+
+  let lineStart = index;
+  while (lineStart > 0 && source[lineStart - 1] !== '\n' && source[lineStart - 1] !== '\r') lineStart--;
+  let prefix = source.slice(lineStart, index);
+  if (lineStart === 0 && prefix.startsWith('\uFEFF')) prefix = prefix.slice(1);
+  if (!/^[\t\v\f ]*$/.test(prefix)) return null;
+
+  const directive = /^#[\t ]*(?:region|endregion|error|warning)(?=$|[\t \r\n])/u.exec(source.slice(index));
+  if (!directive) return null;
+
+  let end = index + directive[0].length;
+  while (end < source.length && source[end] !== '\r' && source[end] !== '\n') end++;
+  return end;
 }
 
 function lexCSharp(source) {
@@ -49,7 +73,15 @@ function lexCSharp(source) {
   };
 
   const consumeString = (stringStart) => {
-    const { contentStart, quote, quoteCount, raw, interpolated, verbatim } = stringStart;
+    const {
+      contentStart,
+      quote,
+      quoteCount,
+      raw,
+      interpolated,
+      verbatim,
+      interpolationBraceCount,
+    } = stringStart;
     if (!interpolated) {
       let end = contentStart;
       while (end < sourceLength) {
@@ -65,11 +97,12 @@ function lexCSharp(source) {
           continue;
         }
         if (!verbatim && source[end] === '\\') {
+          if (source[end + 1] === '\r' || source[end + 1] === '\n') return end + 1;
           end += 2;
           continue;
         }
         if (source[end] === quote) return end + 1;
-        if (quote === '"' && !verbatim && source[end] === '\n') return end;
+        if (!raw && !verbatim && (source[end] === '\r' || source[end] === '\n')) return end;
         end++;
       }
       return sourceLength;
@@ -94,24 +127,41 @@ function lexCSharp(source) {
         return index + 1;
       }
 
+      if (!raw && !verbatim && (source[index] === '\r' || source[index] === '\n')) {
+        addSegment('string', chunkStart, index);
+        return index;
+      }
       if (!raw && !verbatim && source[index] === '\\') {
+        if (source[index + 1] === '\r' || source[index + 1] === '\n') {
+          addSegment('string', chunkStart, index + 1);
+          return index + 1;
+        }
         index += 2;
         continue;
       }
-      if (source[index] === '{' && source[index + 1] === '{') {
+      if (!raw && source[index] === '{' && source[index + 1] === '{') {
         index += 2;
         continue;
       }
-      if (source[index] === '}' && source[index + 1] === '}') {
+      if (!raw && source[index] === '}' && source[index + 1] === '}') {
         index += 2;
         continue;
       }
       if (source[index] === '{') {
-        addSegment('string', chunkStart, index + 1);
-        const expressionEnd = scanCode(index + 1, true);
+        let braceRun = 0;
+        while (source[index + braceRun] === '{') braceRun++;
+        if (braceRun < interpolationBraceCount) {
+          index += braceRun;
+          continue;
+        }
+        // 並んだ波括弧のうち補間を開くのは最後の N 個で、手前の余りは文字列の内容である。
+        index += braceRun - interpolationBraceCount;
+
+        addSegment('string', chunkStart, index + interpolationBraceCount);
+        const expressionEnd = scanCode(index + interpolationBraceCount, true, interpolationBraceCount);
         if (expressionEnd < sourceLength && source[expressionEnd] === '}') {
-          addSegment('string', expressionEnd, expressionEnd + 1);
-          index = expressionEnd + 1;
+          addSegment('string', expressionEnd, expressionEnd + interpolationBraceCount);
+          index = expressionEnd + interpolationBraceCount;
           chunkStart = index;
           continue;
         }
@@ -123,7 +173,7 @@ function lexCSharp(source) {
     return sourceLength;
   };
 
-  const scanCode = (start, interpolationExpression = false) => {
+  const scanCode = (start, interpolationExpression = false, interpolationBraceCount = 1) => {
     let index = start;
     let codeStart = start;
     let braceDepth = 0;
@@ -134,8 +184,14 @@ function lexCSharp(source) {
       const character = source[index];
       if (interpolationExpression && character === '}') {
         if (braceDepth === 0) {
-          flushCode(index);
-          return index;
+          let closeBraceRun = 0;
+          while (source[index + closeBraceRun] === '}') closeBraceRun++;
+          if (closeBraceRun >= interpolationBraceCount) {
+            flushCode(index);
+            return index;
+          }
+          index++;
+          continue;
         }
         braceDepth--;
         index++;
@@ -144,6 +200,11 @@ function lexCSharp(source) {
       if (interpolationExpression && character === '{') {
         braceDepth++;
         index++;
+        continue;
+      }
+      const directiveEnd = freeformDirectiveEnd(source, index);
+      if (directiveEnd !== null) {
+        index = directiveEnd;
         continue;
       }
       if (character === '/' && source[index + 1] === '/') {
