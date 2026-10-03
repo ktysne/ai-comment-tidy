@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
-import { languageOf, languages, lex } from '../../src/lex/index.js';
+import { commentBlocks } from '../../src/comment-blocks.js';
+import { fileStats } from '../../src/stats/file-stats.js';
+import { languageFor, languageOf, languages, lex } from '../../src/lex/index.js';
 
 describe('字句解析の言語選択', () => {
   test('6 言語を公開し、未対応のパスには null を返す', () => {
@@ -23,5 +25,17 @@ describe('字句解析の言語選択', () => {
     expect(source.slice(comment.start, comment.end)).toBe('// note');
     expect(comment.style).toBe('line');
     expect(segments.at(-1).end).toBe(source.length);
+  });
+
+  test('設定した言語パターンが拡張子による判定を置き換える', () => {
+    const config = { languages: { js: ['src/**/*.cpp'], cpp: ['src/special.cpp'] } };
+    const source = '// note\nconst value = 1;\n';
+
+    expect(languageFor('src/app.cpp', config)?.id).toBe('js');
+    expect(languageFor('src/special.cpp', config)?.id).toBe('js');
+    expect(languageFor('src/app.js', config)).toBeNull();
+    expect(lex('src/app.cpp', source, config).some((segment) => segment.kind === 'comment')).toBe(true);
+    expect(commentBlocks('src/app.cpp', source, config)).toHaveLength(1);
+    expect(fileStats('src/app.cpp', Buffer.from(source), config).comment).toBe(1);
   });
 });

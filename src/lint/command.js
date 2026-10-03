@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { lintRepository } from './run.js';
 import { formatReport } from './report.js';
 import { runLintHook } from './hooks.js';
@@ -7,14 +8,19 @@ function parseArgs(argv) {
   let mode = null;
   let hook = null;
   let repoRoot;
+  let configPath;
+  const seen = new Set();
 
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index];
-    if (argument === '--repo') {
+    if (argument === '--repo' || argument === '--config') {
+      if (seen.has(argument)) throw new Error(argument + ' は 1 つだけ指定できます');
+      seen.add(argument);
       if (index + 1 >= argv.length || argv[index + 1].startsWith('--')) {
-        throw new Error('--repo の後にディレクトリを指定してください');
+        throw new Error(argument + ' の後に' + (argument === '--repo' ? 'ディレクトリ' : '絶対パス') + 'を指定してください');
       }
-      repoRoot = argv[++index];
+      if (argument === '--repo') repoRoot = argv[++index];
+      else configPath = argv[++index];
     } else if (argument === '--changed' || argument === '--staged') {
       if (mode !== null) throw new Error('--changed と --staged は同時に指定できません');
       mode = argument.slice(2);
@@ -40,8 +46,12 @@ function parseArgs(argv) {
     }
   }
 
+  if (configPath !== undefined && !path.isAbsolute(configPath) && !path.win32.isAbsolute(configPath)) {
+    throw new Error('--config には絶対パスを指定してください');
+  }
+
   if (hook !== null) {
-    if (files.length > 0 || mode !== null || repoRoot !== undefined) {
+    if (files.length > 0 || mode !== null || repoRoot !== undefined || configPath !== undefined) {
       throw new Error('--hook と手動実行の引数は同時に指定できません');
     }
     return { hook };
@@ -54,7 +64,7 @@ function parseArgs(argv) {
     throw new Error(`${mode === 'changed' ? '--changed' : '--staged'} とファイル名は同時に指定できません`);
   }
 
-  return { mode, files, repoRoot };
+  return { mode, files, repoRoot, configPath };
 }
 
 export function runLintCommand(argv, io) {

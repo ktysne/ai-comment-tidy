@@ -1,5 +1,5 @@
 import { commentBlocks } from '../comment-blocks.js';
-import { languageOf } from '../lex/index.js';
+import { languageFor } from '../lex/index.js';
 import {
   DEFAULT_LICENSE_PATTERNS,
   DEFAULT_MAX_COMMENT_LINES,
@@ -249,10 +249,10 @@ export function findViolations(filePath, source, options = {}) {
       throw new Error('allow の pattern は正規表現として解釈できません');
     }
   });
-  const language = languageOf(filePath);
+  const language = languageFor(filePath, options.config);
   const violations = [];
 
-  for (const block of commentBlocks(filePath, source)) {
+  for (const block of commentBlocks(filePath, source, options.config)) {
     const body = block.text;
     const ruleBody = body.replace(/\n/g, '');
     const compactedIndexMap = compactedBodyIndexMap(body);

@@ -48,4 +48,25 @@ describe('stats の対象選択と集計', () => {
 
     expect(result.totals['.'].lines).toBe(1);
   });
+
+  test('設定の対象範囲と言語を使い、最初の領域と未分類をまとめる', () => {
+    const result = statsForSnapshot(makeSnapshot({
+      'src/core/one.cpp': Buffer.from('// core', 'utf8'),
+      'src/unassigned.cpp': Buffer.from('// unassigned', 'utf8'),
+      'src/private/skip.cpp': Buffer.from('// excluded', 'utf8'),
+      'outside.cpp': Buffer.from('// outside', 'utf8'),
+      'src/ignored.js': Buffer.from('// no configured language', 'utf8'),
+    }), {
+      config: {
+        scope: { include: ['src/**'], exclude: ['src/private'] },
+        languages: { cpp: ['src/**/*.cpp'] },
+        areas: { core: ['src/core/**'], other: ['tests/**'] },
+      },
+    });
+
+    expect(Object.keys(result.files)).toEqual(['src/core/one.cpp', 'src/unassigned.cpp']);
+    expect(result.totals.core.comment).toBe(1);
+    expect(result.totals['(なし)'].comment).toBe(1);
+    expect(result.totals.other).toBeUndefined();
+  });
 });

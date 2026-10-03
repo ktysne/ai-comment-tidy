@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { run } from '../../src/cli.js';
+import { EXIT_USAGE, run } from '../../src/cli.js';
 import { createHashList, writeHashList } from '../../src/snapshot/hash-list.js';
 
 const roots = [];
@@ -108,6 +108,36 @@ describe('check コマンドの引数', () => {
 
     expect(await run(['check', '--files', 'src/a.cpp'], result.io)).toBe(2);
     expect(result.err.join('\n')).toContain('--base');
+  });
+
+  test('--config は絶対パスを受け、設定範囲外のファイルを拒否する', async () => {
+    const root = makeRepo();
+    write(root, 'selected/a.cpp', 'int value; // before\n');
+    write(root, 'outside/a.cpp', 'int value; // before\n');
+    const base = commitAll(root);
+    write(root, 'selected/a.cpp', 'int value; // after\n');
+    const configPath = path.join(root, 'custom-config.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      scope: { include: ['selected/**'], exclude: [] },
+    }), 'utf8');
+    const accepted = capture();
+
+    expect(await run([
+      'check', '--repo', root, '--config', configPath, '--base', base, '--files', 'selected/a.cpp',
+    ], accepted.io)).toBe(0);
+    expect(accepted.out[0]).toContain('check: 合格');
+
+    const excluded = capture();
+    expect(await run([
+      'check', '--repo', root, '--config', configPath, '--base', base, '--files', 'outside/a.cpp',
+    ], excluded.io)).toBe(EXIT_USAGE);
+    expect(excluded.err.join('\n')).toContain('設定の対象外');
+
+    const relative = capture();
+    expect(await run([
+      'check', '--repo', root, '--config', 'relative.json', '--base', base, '--files', 'selected/a.cpp',
+    ], relative.io)).toBe(EXIT_USAGE);
+    expect(relative.err.join('\n')).toContain('--config には絶対パスを指定してください');
   });
 });
 

@@ -43,6 +43,27 @@ function check(before, after, options = {}) {
 }
 
 describe('check の字句の同一性', () => {
+  test('設定の scope と languages を使ってチェック対象と言語を選ぶ', () => {
+    const result = check(
+      { 'src/a.custom': 'int value; // before\n' },
+      { 'src/a.custom': 'int value; // after\n' },
+      {
+        files: ['src/a.custom'],
+        config: {
+          scope: { include: ['src/**/*.custom'], exclude: [] },
+          languages: { cpp: ['src/**/*.custom'] },
+        },
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(() => check(
+      { 'src/a.cpp': 'int value;\n' },
+      { 'src/a.cpp': 'int value;\n' },
+      { config: { scope: { include: ['elsewhere/**'], exclude: [] } } },
+    )).toThrow('設定の対象外');
+  });
+
   test('コメントを消して行を詰めてもコードトークンが同じなら合格する', () => {
     const result = check(
       { 'src/a.cpp': 'int first; // remove\nint second;\n' },

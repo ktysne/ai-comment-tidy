@@ -75,6 +75,29 @@ describe('stats コマンド', () => {
     expect(result.out[0]).toContain('| 全体 |');
   });
 
+  test('--repo と絶対パスの --config で範囲、言語、領域を指定する', async () => {
+    const root = makeRepo();
+    write(root, 'selected/source.custom', '// selected\n');
+    write(root, 'outside/source.js', '// outside\n');
+    commitAll(root);
+    const configPath = path.join(root, 'custom-config.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      scope: { include: ['selected/**'], exclude: [] },
+      languages: { cpp: ['selected/**/*.custom'] },
+      areas: { selected: ['selected/**'] },
+    }), 'utf8');
+    const result = capture();
+
+    expect(await run(['stats', '--repo', root, '--config', configPath], result.io)).toBe(EXIT_OK);
+    const report = JSON.parse(result.out[0]);
+    expect(Object.keys(report.files)).toEqual(['selected/source.custom']);
+    expect(report.totals.selected.comment).toBe(1);
+
+    const relative = capture();
+    expect(await run(['stats', '--repo', root, '--config', 'relative.json'], relative.io)).toBe(EXIT_USAGE);
+    expect(relative.err.join('\n')).toContain('--config には絶対パスを指定してください');
+  });
+
   test('--compare は領域ごとと全体の Markdown 表を出す', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-compare-'));
     roots.push(root);

@@ -66,6 +66,22 @@ afterEach(() => {
 });
 
 describe('lint --hook post-edit', () => {
+  test('設定した拡張子を post-edit で検査する', async () => {
+    const root = makeRepo();
+    fs.mkdirSync(path.join(root, '.comment-tidy'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.comment-tidy', 'config.json'), JSON.stringify({
+      scope: { include: ['elsewhere/**'], exclude: [] },
+      languages: { js: ['*.custom'] },
+    }), 'utf8');
+    const filePath = path.join(root, 'source.custom');
+    fs.writeFileSync(filePath, '// #12\n', 'utf8');
+
+    const result = await runHook('post-edit', editInput(root, filePath, { new_string: '// #12' }));
+
+    expect(result.code).toBe(2);
+    expect(result.stderr[0]).toContain('issue-ref');
+  });
+
   test('違反のあるコメントを足した Edit で 2 と報告が返る', async () => {
     const root = makeRepo();
     writeSource(root, '// #123\n');

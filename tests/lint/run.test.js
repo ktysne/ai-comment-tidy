@@ -39,6 +39,24 @@ afterEach(() => {
 });
 
 describe('lintRepository', () => {
+  test('scope.include は無視し、scope.exclude と設定言語で対象を決める', () => {
+    const root = makeRepo();
+    write(root, '.comment-tidy/config.json', JSON.stringify({
+      scope: { include: ['another/**'], exclude: ['skip/**'] },
+      languages: { js: ['*.custom'] },
+    }));
+    write(root, 'source.custom', '// safe\n');
+    write(root, 'skip/hidden.custom', '// safe\n');
+    commitAll(root);
+    write(root, 'source.custom', '// #73\n');
+    write(root, 'skip/hidden.custom', '// #99\n');
+
+    const result = lintRepository({ repoRoot: root, mode: 'changed' });
+
+    expect(result.confirmed).toBe(1);
+    expect(result.files.map(({ path: filePath }) => filePath)).toEqual(['source.custom']);
+  });
+
   test('既存の違反があるファイルへ無関係な行を足しても報告しない', () => {
     const root = makeRepo();
     write(root, 'src/existing.cpp', '// #123\n\nint value = 1;\n');

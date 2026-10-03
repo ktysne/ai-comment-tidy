@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadLintConfig } from '../lint/config.js';
+import { loadConfig } from '../config.js';
 import { createFsSnapshot } from '../snapshot/fs.js';
 import { readHashList } from '../snapshot/hash-list.js';
 import { runCheck } from './run.js';
@@ -103,7 +103,7 @@ function formatSummary(result) {
 export async function runCheckCommand(argv, io) {
   const options = parseArgs(argv);
   const repoRoot = path.resolve(options.repoRoot ?? process.cwd());
-  const config = loadLintConfig(repoRoot, options.configPath);
+  const config = loadConfig(repoRoot, options.configPath);
   let baseline;
   let target;
   let hashList = null;
