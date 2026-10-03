@@ -185,7 +185,7 @@ rec-studio で、コメントの整理を 2 回に分けて行った(2026-09-18�
 
 `init` は次を作る。既にあるファイルは上書きせず、その旨を出して終了コード 2 で止める。
 
-- `.comment-tidy/config.json`:追跡しているファイルの拡張子から、見つかった言語だけを `languages` に書く(CMake は `**/CMakeLists.txt` も)。それらのファイルを含む第 1 階層のディレクトリを、`scope.include` と `areas` の初期値に書く。`passes` には `--pass` の回を 1 件書く。
+- `.comment-tidy/config.json`:追跡しているファイルの拡張子から、見つかった言語だけを `languages` に書く(CMake は `**/CMakeLists.txt` も)。それらのファイルを含む第 1 階層のディレクトリを、`scope.include` と `areas` の初期値に書く。ルート直下に対応するファイルがあれば、そのファイル名も `scope.include` に書き、それらをまとめた領域 `root` を最後に足す。`passes` には `--pass` の回を 1 件書く。
 - `.comment-tidy/criteria-<回>.md`:道具の `templates/criteria.md` の写し。
 - `.gitignore` に、追跡しない 2 つの置き場の行。
 
@@ -235,8 +235,8 @@ rec-studio で、コメントの整理を 2 回に分けて行った(2026-09-18�
 | `.comment-tidy/work/<回>/base/<束>/` | 基準の写しとハッシュの一覧 | `run` |
 | `.comment-tidy/work/<回>/prompts/<束>.md` | 依頼文 | `run` |
 | `.comment-tidy/work/<回>/reports/<束>.md` | 実行者の最終報告 | `report` |
-| `.comment-tidy/work/<回>/check-<束>.json` | `check` の結果 | `check` |
-| `.comment-tidy/work/<回>/state/<束>.json` | 束の状態 | `run`、`delegate`、`report`、`check`、`apply` |
+| `.comment-tidy/work/<回>/check-<束>.json` | `check` の結果 | `check`(`--offline` を除く) |
+| `.comment-tidy/work/<回>/state/<束>.json` | 束の状態 | `run`、`delegate`、`report`、`check`(`--offline` を除く)、`apply` |
 
 束の状態のファイルの形は次のとおりである(値は例)。
 
@@ -261,13 +261,15 @@ rec-studio で、コメントの整理を 2 回に分けて行った(2026-09-18�
 |---|---|---|
 | (ファイル無し) | 未着手 | `prepared` |
 | `prepared` | 用意済み | `delegated`、`prepared`(`run --fresh`) |
-| `delegated` | 委譲中 | `reported`、`prepared`(`delegate --cancel`) |
+| `delegated` | 委譲中 | `reported`、`delegated`(`delegate --run-id`)、`prepared`(`delegate --cancel`) |
 | `reported` | 報告あり | `checked`、`prepared`(`run --fresh`) |
 | `checked` | 検査済み | `applied`、`checked`(`check` の再実行)、`prepared`(`run --fresh`) |
 | `applied` | 取り込み済み | なし |
 
 表に無い遷移は、状態を書き換えずに終了コード 2 で止める。
-`check` は合格したときだけ `checked` へ移し、不合格なら状態を変えずに結果を `check` に書く。
+状態を書く `check` は、メインセッションが `reported` か `checked` の束に実行するものだけである。
+合格したときだけ `checked` へ移し、不合格なら状態を変えずに結果を `check` に書く。
+実行者が委譲中に実行する `check --offline` は、作業ツリーの外へ書き込まないので、状態も結果のファイルも書かない。
 `notes` は「監査行なし」「報告の JSON なし」のような、状態に添える記録である。
 
 ## コマンド
