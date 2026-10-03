@@ -1,7 +1,8 @@
 const isIdentifierCharacter = (character) => character !== undefined && /[A-Za-z0-9_$]/.test(character);
+const REGEX_PRECEDING_KEYWORDS = ['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await'];
 
 export function lexCppLike(source, options) {
-  const isJs = options.language === 'js';
+  const isJavaScriptLike = options.language === 'js' || options.language === 'ts';
   const segments = [];
   let index = 0;
   let codeStart = 0;
@@ -28,7 +29,7 @@ export function lexCppLike(source, options) {
       flushCode(index);
       let end = index;
       while (end < sourceLength && source[end] !== '\n') {
-        if (!isJs && source[end] === '\\' && (source[end + 1] === '\n' || (source[end + 1] === '\r' && source[end + 2] === '\n'))) {
+        if (!isJavaScriptLike && source[end] === '\\' && (source[end + 1] === '\n' || (source[end + 1] === '\r' && source[end + 2] === '\n'))) {
           end += source[end + 1] === '\r' ? 3 : 2;
           continue;
         }
@@ -51,15 +52,20 @@ export function lexCppLike(source, options) {
       codeStart = index;
       continue;
     }
-    if (isJs && character === '/') {
+    if (isJavaScriptLike && character === '/') {
       const pending = source.slice(codeStart, index).replace(/\s+$/, '');
       if (pending.length) {
         lastSignificant = pending[pending.length - 1];
         const word = /([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(pending);
         lastWord = word ? word[1] : '';
       }
-      const regexAllowed = lastSignificant === '' || '(,=:[!&|?{};+-*%<>~^'.includes(lastSignificant)
-        || ['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await'].includes(lastWord);
+      const beforeBang = /(?:([A-Za-z_$][A-Za-z0-9_$]*)|[)\]])\s*!\s*$/.exec(pending);
+      const isTsNonNullAssertion = options.language === 'ts' && beforeBang !== null
+        && !REGEX_PRECEDING_KEYWORDS.includes(beforeBang[1]);
+      const regexAllowed = !isTsNonNullAssertion && (
+        lastSignificant === '' || '(,=:[!&|?{};+-*%<>~^'.includes(lastSignificant)
+        || REGEX_PRECEDING_KEYWORDS.includes(lastWord)
+      );
       if (regexAllowed) {
         flushCode(index);
         let end = index + 1;
@@ -81,7 +87,7 @@ export function lexCppLike(source, options) {
         continue;
       }
     }
-    if (isJs && character === '`') {
+    if (isJavaScriptLike && character === '`') {
       flushCode(index);
       let end = index + 1;
       while (end < sourceLength) {
@@ -98,7 +104,7 @@ export function lexCppLike(source, options) {
       codeStart = index;
       continue;
     }
-    if (isJs && templateDepth.length && (character === '{' || character === '}')) {
+    if (isJavaScriptLike && templateDepth.length && (character === '{' || character === '}')) {
       if (character === '{') {
         templateDepth[templateDepth.length - 1]++;
       } else if (templateDepth[templateDepth.length - 1] === 0) {
@@ -125,7 +131,7 @@ export function lexCppLike(source, options) {
       continue;
     }
     if (character === '"' || character === "'") {
-      if (!isJs && character === "'") {
+      if (!isJavaScriptLike && character === "'") {
         let previous = index - 1;
         while (previous >= 0 && /[0-9A-Za-z_.']/.test(source[previous])) previous--;
         if (previous + 1 < index && /[0-9]/.test(source[previous + 1])) {
@@ -133,7 +139,7 @@ export function lexCppLike(source, options) {
           continue;
         }
       }
-      if (!isJs && character === '"') {
+      if (!isJavaScriptLike && character === '"') {
         let previous = index - 1;
         while (previous >= 0 && isIdentifierCharacter(source[previous])) previous--;
         const word = source.slice(previous + 1, index);

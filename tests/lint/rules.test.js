@@ -216,6 +216,11 @@ describe('コメント規則', () => {
     expect(violations('var text = "// #12";', 'file.cs')).toEqual([]);
   });
 
+  test('TypeScript のコメントだけを検査し、文字列内の Issue 番号を無視する', () => {
+    expect(violations('// #12', 'file.ts').map(({ ruleId }) => ruleId)).toEqual(['issue-ref']);
+    expect(violations('const text = "// #12";', 'file.ts')).toEqual([]);
+  });
+
   test('ライセンスとツール注記だけのブロックを全規則から除外する', () => {
     expect(violations('// eslint-disable-next-line no-alert #123')).toEqual([]);
   });
