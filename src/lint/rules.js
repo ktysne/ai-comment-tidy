@@ -29,7 +29,7 @@ const RULES = [
     severity: 'confirmed',
     pattern: /20\d{2}-\d{2}-\d{2}|20\d{2}\/\d{1,2}\/\d{1,2}|20\d{2} ?年 ?\d{1,2} ?月/,
     ignoreMatch: (body, index, length) => isDatePath(body, index, length)
-      || isInsideJapaneseQuotedHeading(body, index, length),
+      || isInsideJapaneseQuote(body, index, length),
     hint: '日付をコメントから削除する。',
   },
   {
@@ -59,7 +59,7 @@ const RULES = [
       /ステップ ?[0-9]/,
     ],
     ignoreMatch: (body, index, length, text) => isMilestoneLabel(text)
-      && (isInsideJapaneseQuotedHeading(body, index, length) || isDocsPathReference(body, index)),
+      && (isInsideJapaneseQuote(body, index, length) || isDocsPathReference(body, index)),
     hint: 'レビューや作業の記録を削除し、現在の仕様と理由を書く。',
   },
   {
@@ -160,7 +160,7 @@ function firstMatchInBodies(patterns, bodies, ignoreMatch) {
   return null;
 }
 
-function isInsideJapaneseQuotedHeading(body, index, length) {
+function isInsideJapaneseQuote(body, index, length) {
   const lineStart = body.lastIndexOf('\n', index - 1) + 1;
   const lineEndIndex = body.indexOf('\n', index);
   const lineEnd = lineEndIndex === -1 ? body.length : lineEndIndex;
