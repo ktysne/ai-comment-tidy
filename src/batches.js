@@ -51,16 +51,20 @@ export function readBatchDefinition(repoRoot, pass) {
   return validateBatchDefinition(value, pass);
 }
 
-export function selectBatch(repoRoot, id, pass) {
-  validateName(id, '束');
+export function selectBatchDefinition(repoRoot, pass) {
   if (pass === undefined) {
     const directory = path.join(repoRoot, '.comment-tidy');
     const candidates = fs.readdirSync(directory).filter((name) => /^batches-.+\.json$/u.test(name));
     if (candidates.length !== 1) throw new Error('束の定義が一つだけでないため --pass で回を指定してください');
     pass = candidates[0].slice('batches-'.length, -'.json'.length);
   }
-  const definition = readBatchDefinition(repoRoot, pass);
+  return readBatchDefinition(repoRoot, pass);
+}
+
+export function selectBatch(repoRoot, id, pass) {
+  validateName(id, '束');
+  const definition = selectBatchDefinition(repoRoot, pass);
   const batch = definition.batches.find((candidate) => candidate.id === id);
-  if (!batch) throw new Error(`束がありません: ${pass}/${id}`);
+  if (!batch) throw new Error(`束がありません: ${definition.pass}/${id}`);
   return { definition, batch };
 }
