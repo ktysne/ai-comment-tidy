@@ -241,6 +241,19 @@ node bin/comment-tidy.js delegate V01 --pass volume --repo <対象リポジト�
 取消で作業ツリーや基準の写しは変更しません。
 `--cancel` と `--run-id` は同時に使えません。
 
+`report` は委譲中の束へ最終報告のファイルを取り込み、「報告あり」にします。
+
+```bash
+node bin/comment-tidy.js report V01 <報告ファイル> --pass volume --repo <対象リポジトリ>
+```
+
+報告の相対パスは呼び出したディレクトリを基準とします。
+元の報告をそのまま保存し、最後の JSON ブロックから三つの候補を読みます。
+候補は担当ファイルと基準コミットの行番号を指す必要があります。
+JSON や監査行がなければ記録を添えて受け付けます。
+壊れた JSON、不正な候補、記録と異なる実行 ID は保存前に拒否します。
+実行者の検証ができなかった警告も記録し、メインセッションが検査をやり直せるようにします。
+
 ## 開発状況
 
 [docs/design.md](docs/design.md)「実装の段階」の順に作っています。
@@ -251,10 +264,10 @@ node bin/comment-tidy.js delegate V01 --pass volume --repo <対象リポジト�
 | 1a | 字句解析、`lint`、フックの入口、`install-hooks` | 済み |
 | 1b | `stats`(集計)と `check`(コメント以外が変わっていないことの検査) | 1b-1 済み、1b-2 済み |
 | 2 | 設定と束 | 済み |
-| 3 | 用意と取り込み | `run`、`delegate` 済み。`report`、束を取る `check`、`apply` は未着手 |
+| 3 | 用意と取り込み | `run`、`delegate`、`report` 済み。束を取る `check`、`apply` は未着手 |
 | 4〜9 | 試行、監査、仕上げの道具、スキルと資料 | 未着手 |
 
-報告の取り込みと結果の統合のコマンド(`report`、`apply` など)は、まだありません。
+束を取る `check` と、結果を統合する `apply` は、まだありません。
 作業の計画と引き継ぎは [docs/handover/](docs/handover/) にあります。
 
 ## 開発
