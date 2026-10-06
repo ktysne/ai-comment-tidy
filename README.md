@@ -227,6 +227,20 @@ node bin/comment-tidy.js run V01 V02 --pass volume --repo <対象リポジトリ
 委譲中と取り込み済みの束には使えません。
 ブランチへ移った作業ツリーや基準と異なる HEAD の作業ツリーも、保護のため作り直しません。
 
+`delegate` は用意済みの束を「委譲中」にし、実行 ID を記録します。
+実行者の起動や停止は行いません。
+
+```bash
+node bin/comment-tidy.js delegate V01 --pass volume --repo <対象リポジトリ>
+node bin/comment-tidy.js delegate V01 --pass volume --repo <対象リポジトリ> --run-id <実行ID>
+```
+
+実行 ID の追記では委譲開始時刻を保持します。
+同じ ID は再記録できますが、委譲中の別の ID への置き換えと、ID 指定なしでの再委譲は拒否します。
+実行者が停止しているか、まだ渡していないことを確認してから `--cancel` を使うと、「用意済み」に戻します。
+取消で作業ツリーや基準の写しは変更しません。
+`--cancel` と `--run-id` は同時に使えません。
+
 ## 開発状況
 
 [docs/design.md](docs/design.md)「実装の段階」の順に作っています。
@@ -237,10 +251,10 @@ node bin/comment-tidy.js run V01 V02 --pass volume --repo <対象リポジトリ
 | 1a | 字句解析、`lint`、フックの入口、`install-hooks` | 済み |
 | 1b | `stats`(集計)と `check`(コメント以外が変わっていないことの検査) | 1b-1 済み、1b-2 済み |
 | 2 | 設定と束 | 済み |
-| 3 | 用意と取り込み | `run` 済み。`delegate`、`report`、束を取る `check`、`apply` は未着手 |
+| 3 | 用意と取り込み | `run`、`delegate` 済み。`report`、束を取る `check`、`apply` は未着手 |
 | 4〜9 | 試行、監査、仕上げの道具、スキルと資料 | 未着手 |
 
-委譲の記録と取り込みのコマンド(`delegate`、`apply` など)は、まだありません。
+報告の取り込みと結果の統合のコマンド(`report`、`apply` など)は、まだありません。
 作業の計画と引き継ぎは [docs/handover/](docs/handover/) にあります。
 
 ## 開発

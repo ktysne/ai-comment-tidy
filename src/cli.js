@@ -61,4 +61,5 @@ commands.set('plan', async (...args) => (await import('./plan/command.js')).runP
 commands.set('prompt', async (...args) => (await import('./prompt/command.js')).runPromptCommand(...args));
 commands.set('status', async (...args) => (await import('./status/command.js')).runStatusCommand(...args));
 commands.set('run', async (...args) => (await import('./run/command.js')).runRunCommand(...args));
+commands.set('delegate', async (...args) => (await import('./delegate/command.js')).runDelegateCommand(...args));
 commands.set('install-hooks', runInstallHooksCommand);
