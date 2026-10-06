@@ -17,9 +17,11 @@ export function writeManagedFile(repoRoot, filePath, content) {
   }
 }
 
-export function verifyBaseline(repoRoot, paths, files) {
+export function verifyBaseline(repoRoot, paths, files, scopeFiles) {
   ensureManagedPath(repoRoot, paths.hashes);
   const hashes = readHashList(paths.hashes);
+  const missing = scopeFiles.filter((file) => !Object.hasOwn(hashes.files, file));
+  if (missing.length) throw new Error(`現在の対象範囲のハッシュがありません。確認して --fresh で作り直してください: ${missing.join('、')}`);
   for (const file of files) {
     const target = path.join(paths.baseline, ...file.split('/'));
     ensureManagedPath(repoRoot, target);

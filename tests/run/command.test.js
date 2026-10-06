@@ -193,6 +193,33 @@ describe('run コマンド', { timeout: 20000 }, () => {
     expect(await run(['run', 'V01', '--repo', root], capture().io)).toBe(2);
     expect(fs.existsSync(paths.worktree)).toBe(false);
   });
+  test.each(['同じ設定', '外部設定'])('対象範囲を広げた%sでの再開はハッシュの補充や依頼文の更新をせず止める', async (mode) => {
+    const { root, paths } = makeRepo();
+    const configPath = path.join(root, '.comment-tidy/config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    config.scope.include = ['src/a.cpp'];
+    fs.writeFileSync(configPath, JSON.stringify(config));
+    expect(await run(['run', 'V01', '--repo', root], capture().io)).toBe(0);
+    const hashes = fs.readFileSync(paths.hashes);
+    const prompt = fs.readFileSync(paths.prompt);
+    const state = fs.readFileSync(paths.state);
+    write(paths.worktree, 'src/b.cpp', 'int changed;\r\n');
+    config.scope.include = ['src/**'];
+    const expanded = mode === '外部設定' ? path.join(root, 'expanded.json') : configPath;
+    fs.writeFileSync(expanded, JSON.stringify(config));
+    const result = capture();
+    const args = ['run', 'V01', '--repo', root, '--config', expanded];
+    expect(await run(args, result.io)).toBe(2);
+    expect(result.err[0]).toContain('--fresh');
+    expect(result.err[0]).toContain('src/b.cpp');
+    expect(fs.readFileSync(paths.hashes)).toEqual(hashes);
+    expect(fs.readFileSync(paths.prompt)).toEqual(prompt);
+    expect(fs.readFileSync(paths.state)).toEqual(state);
+    expect(await run([...args, '--fresh'], capture().io)).toBe(0);
+    expect(Object.keys(readHashList(paths.hashes).files)).toContain('src/b.cpp');
+    expect(fs.readFileSync(path.join(paths.worktree, 'src/b.cpp'), 'utf8')).toBe('int b;\r\n');
+    expect(await run(args, capture().io)).toBe(0);
+  });
   test('複数回の選択、サブディレクトリ、外部設定を受ける', async () => {
     const { root, definition } = makeRepo();
     write(root, '.comment-tidy/batches-other.json', JSON.stringify({ ...definition, pass: 'other' }));

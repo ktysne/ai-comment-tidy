@@ -48,6 +48,7 @@ export function runRunCommand(argv, io) {
   const config = loadConfig(repoRoot, configPath);
   const definition = selectBatchDefinition(repoRoot, options.pass);
   const baseline = createGitSnapshot(repoRoot, definition.base);
+  const scopeFiles = baseline.listFiles().filter((file) => isTargetFile(file, config));
   const jobs = options.batches.map((id) => {
     const batch = definition.batches.find((item) => item.id === id);
     if (!batch) throw new Error(`束がありません: ${definition.pass}/${id}`);
@@ -66,7 +67,7 @@ export function runRunCommand(argv, io) {
         throw new Error(`準備途中のファイルがあります。確認して --fresh で作り直してください: ${id}`);
       }
     }
-    if (present && !options.fresh) verifyBaseline(repoRoot, paths, batch.files);
+    if (present && !options.fresh) verifyBaseline(repoRoot, paths, batch.files, scopeFiles);
     const snapshot = present && !options.fresh ? createGitSnapshot(paths.worktree) : baseline;
     const changed = present && !options.fresh ? changedAssignedFiles(paths.worktree, batch.files) : null;
     const prompt = generatePrompt({ ...context, snapshot, changed });
