@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { languageOf, languageFor, languages } from '../lex/index.js';
 import { matchesGlob } from '../glob.js';
-import { createGitSnapshot } from '../snapshot/git.js';
+import { createGitSnapshot, repositoryRoot } from '../snapshot/git.js';
 import { findForbiddenTerms, parseCriteriaSections } from './criteria.js';
 
 const TEMPLATE_PATH = fileURLToPath(new URL('../../templates/criteria.md', import.meta.url));
@@ -57,11 +57,11 @@ function isCMakeLists(filePath) {
 function addLanguageFile(groups, filePath, language) {
   let group = groups.get(language.id);
   if (!group) {
-    group = { extensions: new Set(), hasCMakeLists: false };
+    group = { extensions: new Set(), cmakeNames: new Set() };
     groups.set(language.id, group);
   }
   if (language.id === 'cmake' && isCMakeLists(filePath)) {
-    group.hasCMakeLists = true;
+    group.cmakeNames.add(path.posix.basename(filePath));
     return;
   }
   const fileName = path.posix.basename(filePath);
@@ -75,7 +75,7 @@ function languagePatterns(groups) {
     const group = groups.get(language.id);
     if (!group) continue;
     const patterns = [];
-    if (group.hasCMakeLists) patterns.push('**/CMakeLists.txt');
+    for (const name of [...group.cmakeNames].sort(comparePaths)) patterns.push(`**/${name}`);
     for (const extension of [...group.extensions].sort(comparePaths)) patterns.push(`**/*.${extension}`);
     result[language.id] = patterns;
   }
@@ -243,6 +243,7 @@ function commitGeneratedFiles(files, gitignorePath, gitignoreContent, updateGiti
 
 function readGitignore(filePath) {
   try {
+    if (!fs.lstatSync(filePath).isFile()) throw new Error('.gitignore は通常ファイルである必要があります');
     return fs.readFileSync(filePath, 'utf8');
   } catch (error) {
     if (error.code === 'ENOENT') return null;
@@ -262,7 +263,7 @@ function pathExists(filePath) {
 
 export function runInitCommand(argv, io) {
   const options = parseArgs(argv);
-  const repoRoot = path.resolve(options.repoRoot ?? process.cwd());
+  const repoRoot = repositoryRoot(path.resolve(options.repoRoot ?? process.cwd()));
   const configPath = path.resolve(options.configPath ?? path.join(repoRoot, '.comment-tidy', 'config.json'));
   const criteriaPath = path.join(repoRoot, '.comment-tidy', `criteria-${options.pass}.md`);
   const gitignorePath = path.join(repoRoot, '.gitignore');

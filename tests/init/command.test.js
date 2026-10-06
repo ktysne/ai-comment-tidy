@@ -37,6 +37,53 @@ afterEach(() => {
 });
 
 describe('init', () => {
+  test.each([false, true])('サブディレクトリからの実行でもルートへ生成する (--repo: %s)', async (explicitRepo) => {
+    const root = makeRoot();
+    writeFile(root, 'src/main.cpp', 'int main() {}\n');
+    track(root, ['src/main.cpp']);
+    const result = capture();
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(path.join(root, 'src'));
+    try {
+      expect(await run(['init', ...(explicitRepo ? ['--repo', path.join(root, 'src')] : [])], result.io)).toBe(EXIT_OK);
+    } finally {
+      cwdSpy.mockRestore();
+    }
+    expect(JSON.parse(fs.readFileSync(path.join(root, '.comment-tidy/config.json'), 'utf8')).scope.include)
+      .toEqual(['src/**']);
+    expect(fs.existsSync(path.join(root, 'src/.comment-tidy'))).toBe(false);
+    expect(fs.existsSync(path.join(root, '.gitignore'))).toBe(true);
+  });
+
+  test('CMakeLists の追跡名の大文字小文字を生成パターンに保持する', async () => {
+    const root = makeRoot();
+    writeFile(root, 'cmakelists.txt', 'project(example)\n');
+    track(root, ['cmakelists.txt']);
+    expect(await run(['init', '--repo', root], capture().io)).toBe(EXIT_OK);
+    expect(JSON.parse(fs.readFileSync(path.join(root, '.comment-tidy/config.json'), 'utf8')).languages.cmake)
+      .toEqual(['**/cmakelists.txt']);
+  });
+
+  test('リンクの .gitignore を無変更で拒否し成果物を作らない', async () => {
+    const root = makeRoot();
+    writeFile(root, 'shared-ignore', '.cache/\n');
+    const ignorePath = path.join(root, '.gitignore');
+    const lstat = fs.lstatSync.bind(fs);
+    const spy = vi.spyOn(fs, 'lstatSync').mockImplementation((filePath, ...args) => {
+      if (filePath === ignorePath) return { isFile: () => false, isSymbolicLink: () => true };
+      return lstat(filePath, ...args);
+    });
+    const result = capture();
+    try {
+      expect(await run(['init', '--repo', root], result.io)).toBe(EXIT_USAGE);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(result.err.join('\n')).toContain('通常ファイル');
+    expect(fs.readFileSync(path.join(root, 'shared-ignore'), 'utf8')).toBe('.cache/\n');
+    expect(fs.existsSync(path.join(root, '.comment-tidy'))).toBe(false);
+    expect(fs.existsSync(ignorePath)).toBe(false);
+  });
+
   test('追跡ファイルから設定を作り、ルートの CMakeLists と配下のソースを含める', async () => {
     const root = makeRoot();
     const originalGitignore = '.cache/\r\n.comment-tidy/work\r\n';

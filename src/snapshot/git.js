@@ -13,7 +13,7 @@ function git(repoRoot, args, input) {
   });
 }
 
-function repositoryRoot(repoRoot) {
+export function repositoryRoot(repoRoot) {
   return path.resolve(git(repoRoot, ['rev-parse', '--show-toplevel']).toString('utf8').trim());
 }
 
