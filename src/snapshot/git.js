@@ -13,7 +13,7 @@ function git(repoRoot, args, input) {
   });
 }
 
-function repositoryRoot(repoRoot) {
+export function repositoryRoot(repoRoot) {
   return path.resolve(git(repoRoot, ['rev-parse', '--show-toplevel']).toString('utf8').trim());
 }
 
@@ -46,9 +46,12 @@ function indexedSymlinks(repoRoot) {
   return symlinks;
 }
 
-function worktreeFiles(repoRoot) {
+function worktreeFiles(repoRoot, { trackedOnly = false } = {}) {
   const symlinks = indexedSymlinks(repoRoot);
-  return nulFields(git(repoRoot, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']))
+  const args = trackedOnly
+    ? ['ls-files', '--cached', '-z']
+    : ['ls-files', '--cached', '--others', '--exclude-standard', '-z'];
+  return nulFields(git(repoRoot, args))
     .filter((filePath) => !symlinks.has(filePath) && isRegularFile(path.join(repoRoot, ...filePath.split('/'))));
 }
 
@@ -117,6 +120,7 @@ export function createGitSnapshot(repoRoot, ref = null) {
   const root = repositoryRoot(repoRoot);
   const files = ref === null ? null : committedFiles(root, ref);
   const worktreePaths = ref === null ? new Set(worktreeFiles(root)) : null;
+  let trackedPaths = null;
 
   const readMany = (filePaths) => {
     const normalizedPaths = filePaths.map(normalizePath);
@@ -141,6 +145,11 @@ export function createGitSnapshot(repoRoot, ref = null) {
   const snapshot = {
     listFiles() {
       return ref === null ? [...worktreePaths] : [...files.keys()];
+    },
+    listTrackedFiles() {
+      if (ref !== null) return [...files.keys()];
+      if (trackedPaths === null) trackedPaths = new Set(worktreeFiles(root, { trackedOnly: true }));
+      return [...trackedPaths];
     },
     read(filePath) {
       const normalizedPath = normalizePath(filePath);
