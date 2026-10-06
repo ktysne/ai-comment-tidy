@@ -120,6 +120,18 @@ export function commitDate(repoRoot, commit) {
   return git(repoRoot, ['show', '-s', '--format=%cI', commit, '--']).toString('utf8').trim();
 }
 
+export function changedAssignedFiles(repoRoot, files) {
+  const output = git(repoRoot, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...files.map((file) => `:(literal)${file}`)]);
+  const records = nulFields(output);
+  const changed = new Set();
+  for (let index = 0; index < records.length; index++) {
+    const record = records[index];
+    changed.add(record.slice(3));
+    if (/[RC]/u.test(record.slice(0, 2))) changed.add(records[++index]);
+  }
+  return new Set(files.filter((file) => changed.has(file)));
+}
+
 export function createGitSnapshot(repoRoot, ref = null) {
   const root = repositoryRoot(repoRoot);
   const files = ref === null ? null : committedFiles(root, ref);

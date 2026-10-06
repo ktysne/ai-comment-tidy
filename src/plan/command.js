@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../config.js';
 import { commitDate, createGitSnapshot, repositoryRoot, resolveCommit } from '../snapshot/git.js';
 import { planForSnapshot } from './run.js';
+import { batchDefinitionPath } from '../paths.js';
 
 const TOOL_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -78,7 +79,7 @@ export function runPlanCommand(argv, io) {
   if (!config.passes || !Object.hasOwn(config.passes, options.pass)) {
     throw new Error(`設定に回がありません: ${options.pass}`);
   }
-  const outputPath = path.join(repoRoot, '.comment-tidy', `batches-${options.pass}.json`);
+  const outputPath = batchDefinitionPath(repoRoot, options.pass);
   validateOutput(outputPath, options.force);
   const base = resolveCommit(repoRoot, options.base ?? config.plan.base);
   const date = commitDate(repoRoot, base);
