@@ -1,13 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { selectBatch } from '../batches.js';
 import { loadConfig } from '../config.js';
-import { batchPaths, ensureManagedPath, resolveExternalPath, validateName } from '../paths.js';
+import { ensureManagedPath, validateName } from '../paths.js';
 import { changedAssignedFiles, createGitSnapshot, repositoryRoot } from '../snapshot/git.js';
 import { generatePrompt } from './run.js';
-
-const TOOL_PATH = fileURLToPath(new URL('../../bin/comment-tidy.js', import.meta.url));
+import { promptContext } from './context.js';
 
 function parseArgs(argv) {
   const options = {};
@@ -49,15 +47,9 @@ export function runPromptCommand(argv, io) {
   const configPath = path.resolve(options.configPath ?? path.join(repoRoot, '.comment-tidy', 'config.json'));
   const config = loadConfig(repoRoot, configPath);
   const { definition, batch } = selectBatch(repoRoot, options.batch, options.pass);
-  const pass = definition.pass;
-  if (!config.passes || !Object.hasOwn(config.passes, pass)) throw new Error(`設定に回がありません: ${pass}`);
-  if (!config.rulesPaths?.length) throw new Error('依頼文には rulesPaths でコメント記述ルールの正本を指定してください');
-  const paths = batchPaths(repoRoot, pass, batch.id);
+  const context = promptContext(repoRoot, definition, batch, config, configPath);
+  const { paths } = context;
   ensureManagedPath(repoRoot, paths.worktree);
-  const criteriaPath = resolveExternalPath(config.passes[pass].criteria, path.join(repoRoot, '.comment-tidy'));
-  const criteria = fs.readFileSync(criteriaPath, 'utf8');
-  const rulesPaths = (config.rulesPaths ?? []).map((file) => resolveExternalPath(file, repoRoot));
-  const docsPaths = batch.docs.map((file) => path.resolve(repoRoot, file));
   let snapshot;
   let changed = null;
   if (worktreeExists(paths.worktree)) {
@@ -67,9 +59,7 @@ export function runPromptCommand(argv, io) {
   } else {
     snapshot = createGitSnapshot(repoRoot, definition.base);
   }
-  const prompt = generatePrompt({
-    batch, paths, criteria, criteriaPath, rulesPaths, docsPaths, snapshot, changed, config, configPath, toolPath: TOOL_PATH,
-  });
+  const prompt = generatePrompt({ ...context, snapshot, changed });
   io.stdout(prompt);
   return 0;
 }
