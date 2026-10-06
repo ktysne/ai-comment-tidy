@@ -11,9 +11,9 @@ export function findDocReferences(text, refPattern) {
   return references;
 }
 
-export function findCommentDocReferences(filePath, source, refPattern) {
+export function findCommentDocReferences(filePath, source, refPattern, config) {
   const references = [];
-  for (const segment of lex(filePath, source)) {
+  for (const segment of lex(filePath, source, config)) {
     if (segment.kind !== 'comment') continue;
     const comment = source.slice(segment.start, segment.end);
     const lineOffset = source.slice(0, segment.start).split('\n').length - 1;
@@ -63,15 +63,19 @@ export function markdownHeadings(source) {
   return headings;
 }
 
-export function docReferenceExists({ doc, heading, docsRoot, files, read }) {
+export function resolveDocPaths(doc, docsRoot, files) {
   const normalizedRoot = docsRoot.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '');
   const rootPrefix = normalizedRoot === '.' || normalizedRoot === '' ? '' : `${normalizedRoot}/`;
-  const candidates = files.filter((filePath) => {
+  return files.filter((filePath) => {
     const normalized = filePath.replace(/\\/g, '/');
     const fileName = path.posix.basename(normalized);
     if (!normalized.startsWith(rootPrefix) || !fileName.toLowerCase().endsWith('.md')) return false;
     return fileName.startsWith(doc);
   });
+}
+
+export function docReferenceExists({ doc, heading, docsRoot, files, read }) {
+  const candidates = resolveDocPaths(doc, docsRoot, files);
   const expected = withoutParentheticalSupplement(heading);
   return candidates.some((filePath) => markdownHeadings(read(filePath))
     .some((actual) => withoutParentheticalSupplement(actual).startsWith(expected)));

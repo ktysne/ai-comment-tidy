@@ -57,4 +57,5 @@ commands.set('lint', async (...args) => (await import('./lint/command.js')).runL
 commands.set('stats', async (...args) => (await import('./stats/command.js')).runStatsCommand(...args));
 commands.set('check', async (...args) => (await import('./check/command.js')).runCheckCommand(...args));
 commands.set('init', async (...args) => (await import('./init/command.js')).runInitCommand(...args));
+commands.set('plan', async (...args) => (await import('./plan/command.js')).runPlanCommand(...args));
 commands.set('install-hooks', runInstallHooksCommand);
