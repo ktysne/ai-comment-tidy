@@ -116,6 +116,10 @@ export function resolveCommit(repoRoot, ref) {
   return git(repoRoot, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]).toString('utf8').trim();
 }
 
+export function commitDate(repoRoot, commit) {
+  return git(repoRoot, ['show', '-s', '--format=%cI', commit, '--']).toString('utf8').trim();
+}
+
 export function createGitSnapshot(repoRoot, ref = null) {
   const root = repositoryRoot(repoRoot);
   const files = ref === null ? null : committedFiles(root, ref);
