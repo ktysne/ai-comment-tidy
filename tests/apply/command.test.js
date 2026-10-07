@@ -147,6 +147,17 @@ describe('検査済みの束の取り込み', { timeout: 20000 }, () => {
     expect(await run(['apply', 'V01', '--pass', 'volume', '--repo', path.join(root, 'src'), '--config', config], capture().io)).toBe(0);
     expect(fs.readFileSync(path.join(root, 'src/b.cpp'), 'utf8')).toBe('int later;\r\n');
   });
+  test('担当外とのハードリンクを拒否し双方の内容を保持する', async () => {
+    const { root } = await makeRepo();
+    const assigned = path.join(root, 'src/a.cpp');
+    const outside = path.join(root, 'linked.cpp');
+    fs.linkSync(assigned, outside);
+    const before = fs.readFileSync(assigned);
+    expect(await run(['apply', 'V01', '--repo', root], capture().io)).toBe(2);
+    expect(fs.readFileSync(assigned)).toEqual(before);
+    expect(fs.readFileSync(outside)).toEqual(before);
+    expect(readState(root, 'volume', 'V01').status).toBe('checked');
+  });
   test.each([[], ['V01', 'V02'], ['V01', '--commit'], ['V01', '--offline'], ['V01', '--config', 'relative.json'], ['V01', '--pass', '../bad']])('不正な引数を拒否する: %j', async (...args) => {
     expect(await run(['apply', ...args], capture().io)).toBe(2);
   });

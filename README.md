@@ -298,7 +298,6 @@ comment-tidy apply V01 --pass volume --repo /path/to/integration
 | 3 | 用意と取り込み | 実装済み。次は段階 4 の 1 束の試行 |
 | 4〜9 | 試行、監査、仕上げの道具、スキルと資料 | 未着手 |
 
-結果を統合する `apply` は、まだありません。
 作業の計画と引き継ぎは [docs/handover/](docs/handover/) にあります。
 
 ## 開発

@@ -43,7 +43,7 @@ function regularTarget(root, file) {
   for (const [index, part] of parts.entries()) {
     target = path.join(target, part);
     const status = fs.lstatSync(target);
-    if (status.isSymbolicLink() || (index === parts.length - 1 ? !status.isFile() : !status.isDirectory())) {
+    if (status.isSymbolicLink() || (index === parts.length - 1 ? !status.isFile() || status.nlink > 1 : !status.isDirectory())) {
       throw new Error(`担当ファイルの置き場にリンクか不正な要素があります: ${file}`);
     }
   }
@@ -72,7 +72,6 @@ export function runApplyCommand(argv, io) {
   const base = createGitSnapshot(repoRoot, definition.base);
   const head = createGitSnapshot(repoRoot, 'HEAD');
   const original = new Map();
-  const destinations = new Map();
   const baseRaw = base.readManyRaw(batch.files);
   const headRaw = head.readManyRaw(batch.files);
   const baseContents = base.readMany(batch.files);
@@ -80,7 +79,6 @@ export function runApplyCommand(argv, io) {
   for (const file of batch.files) {
     if (!baseRaw.get(file).equals(headRaw.get(file))) throw new Error(`統合先の HEAD が基準から変わっています: ${file}`);
     const destination = regularTarget(repoRoot, file);
-    destinations.set(file, destination);
     original.set(file, fs.readFileSync(destination));
     if (!original.get(file).equals(baseContents.get(file)) && !original.get(file).equals(baseRaw.get(file))) {
       throw new Error(`統合先の担当ファイルが基準から変わっています: ${file}`);
