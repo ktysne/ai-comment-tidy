@@ -3,10 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { run } from '../src/cli.js';
 import { batchPaths } from '../src/paths.js';
 import { readState } from '../src/state.js';
 
+const toolRoot = fileURLToPath(new URL('../', import.meta.url));
+const toolCommit = execFileSync('git', ['-C', toolRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const root = path.resolve('.cross-review/stage4-repo');
 const artifacts = path.resolve('docs/trials/2026-10-07-stage4');
 const paths = batchPaths(root, 'volume', 'V01');
@@ -47,7 +50,7 @@ fs.copyFileSync(paths.state, path.join(artifacts, 'state.json'));
 fs.copyFileSync(paths.check, path.join(artifacts, 'check.json'));
 const hash = buffer => createHash('sha256').update(buffer).digest('hex');
 fs.writeFileSync(path.join(artifacts, 'results.json'), JSON.stringify({
-  toolCommit: git('rev-parse', 'HEAD') === head ? 'b0defac' : null,
+  toolCommit,
   node: process.version,
   platform: process.platform,
   integrationHead: head,
