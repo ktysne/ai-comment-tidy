@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from '../config.js';
-import { validateName } from '../paths.js';
+import { assertSafeAssignedPath, validateName } from '../paths.js';
 import { readHashList } from '../snapshot/hash-list.js';
 import { runCheck } from './run.js';
 import { offlineSnapshots } from './snapshots.js';
@@ -98,10 +98,12 @@ export async function runCheckCommand(argv, io) {
     hashList = readHashList(path.resolve(options.hashesPath));
     ({ baseline, target } = offlineSnapshots(options, repoRoot, hashList));
   } else {
-    const { createGitSnapshot, resolveCommit } = await import('../snapshot/git.js');
-    const base = resolveCommit(repoRoot, options.base);
-    baseline = Object.assign(createGitSnapshot(repoRoot, base), { base });
-    target = createGitSnapshot(repoRoot);
+    const { createGitSnapshot, repositoryRoot, resolveCommit } = await import('../snapshot/git.js');
+    const gitRoot = repositoryRoot(repoRoot);
+    for (const filePath of options.files) assertSafeAssignedPath(gitRoot, filePath);
+    const base = resolveCommit(gitRoot, options.base);
+    baseline = Object.assign(createGitSnapshot(gitRoot, base), { base });
+    target = createGitSnapshot(gitRoot);
   }
 
   const result = runCheck({ files: options.files, baseline, target, hashList, config, offline });

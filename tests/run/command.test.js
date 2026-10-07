@@ -23,6 +23,19 @@ function capture() {
   const err = [];
   return { out, err, io: { stdout: (text) => out.push(text), stderr: (text) => err.push(text) } };
 }
+function replaceWithExternalJunction(directory, context) {
+  const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-outside-'));
+  roots.push(externalRoot);
+  const externalDirectory = path.join(externalRoot, path.basename(directory));
+  fs.renameSync(directory, externalDirectory);
+  try { fs.symlinkSync(externalDirectory, directory, 'junction'); }
+  catch (error) {
+    fs.renameSync(externalDirectory, directory);
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) { context.skip(`リンク作成不可: ${error.code}`); return false; }
+    throw error;
+  }
+  return externalDirectory;
+}
 function makeRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-run-'));
   roots.push(root);
@@ -103,6 +116,26 @@ describe('run コマンド', { timeout: 20000 }, () => {
     fs.unlinkSync(path.join(paths.worktree, 'src/a.cpp'));
     expect(await run(['run', 'V01', '--repo', root], capture().io)).toBe(0);
     expect(fs.readFileSync(paths.prompt, 'utf8')).toContain('src/a.cpp: 欠落');
+  });
+  test('担当ファイルの親が外部ジャンクションなら再開せず状態と記録を保つ', async (context) => {
+    const { root, paths } = makeRepo();
+    expect(await run(['run', 'V01', '--repo', root], capture().io)).toBe(0);
+    write(root, path.relative(root, paths.check), '以前の検査');
+    const stateBefore = fs.readFileSync(paths.state);
+    const checkBefore = fs.readFileSync(paths.check);
+    const promptBefore = fs.readFileSync(paths.prompt);
+    const externalDirectory = replaceWithExternalJunction(path.join(paths.worktree, 'src'), context);
+    if (!externalDirectory) return;
+
+    const result = capture();
+    const read = vi.spyOn(fs, 'readFileSync');
+    expect(await run(['run', 'V01', '--repo', root], result.io)).toBe(2);
+    expect(result.err.join('\n')).toContain('担当ファイルの置き場にリンクか不正な要素があります: src/a.cpp');
+    expect(fs.readFileSync(paths.state)).toEqual(stateBefore);
+    expect(fs.readFileSync(paths.check)).toEqual(checkBefore);
+    expect(fs.readFileSync(paths.prompt)).toEqual(promptBefore);
+    const targetPath = path.join(externalDirectory, 'a.cpp');
+    expect(read.mock.calls.some(([file]) => typeof file === 'string' && path.resolve(file) === targetPath)).toBe(false);
   });
   test('freshは指定した束だけを基準へ戻し、過去の検査と報告を消す', async () => {
     const { root, paths } = makeRepo();

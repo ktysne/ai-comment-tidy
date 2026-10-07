@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { selectBatch } from '../batches.js';
 import { loadConfig } from '../config.js';
-import { batchPaths, ensureManagedPath } from '../paths.js';
+import { assertSafeAssignedPath, batchPaths, ensureManagedPath } from '../paths.js';
 import { readHashList } from '../snapshot/hash-list.js';
 import { readState, statusLabel } from '../state.js';
 import { verifyBaseline } from '../run/artifacts.js';
@@ -38,6 +38,7 @@ export async function runBatchCheckCommand(options, io) {
     ensureManagedPath(repoRoot, paths.state);
     state = readState(repoRoot, pass, batch.id);
     if (!['reported', 'checked'].includes(state?.status)) throw new Error(`検査を記録できるのは報告ありか検査済みの束だけです: ${batch.id} (${statusLabel(state)})`);
+    for (const file of batch.files) assertSafeAssignedPath(paths.worktree, file);
     const { validateBatchWorktree } = await import('../snapshot/worktree.js');
     validateBatchWorktree(repoRoot, paths.worktree, definition.base);
     baseline = Object.assign(git.createGitSnapshot(paths.worktree, definition.base), { base: definition.base });

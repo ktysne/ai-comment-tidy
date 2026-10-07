@@ -396,6 +396,7 @@ blob のまま読むと、変換が効くリポジトリでは比較元が LF、
 既存のチェックアウトでは、担当外の変更と行末の検査を git の判定に寄せる。
 担当外の変更は `git diff --name-only <base>` で判定し、行末は `--filters` の出力か blob のどちらかと一致すれば合格にする。
 シンボリックリンクは、コミットと作業ツリーのどちらでも一覧から除く。コミットではリンク先のパスが、作業ツリーではリンク先の内容が読まれ、変更が無くても時点の間で食い違うためである。
+作業ツリーの担当ファイルは、親ディレクトリまでにリンクがあれば読み込まず、終了コード 2 で停止する。
 `node:child_process` を読み込むのは `src/snapshot/git.js` だけにする。
 `check` のモジュールは `git.js` を静的に読み込まず、`--offline` でないときだけ動的に読み込む。
 eslint の `no-restricted-imports` で、`src/check/` と `src/snapshot/fs.js` から `node:child_process` と `git.js` を読み込むことを禁じる。

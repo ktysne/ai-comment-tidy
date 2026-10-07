@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { assertSafeAssignedPath } from '../paths.js';
 import { createFsSnapshot } from '../snapshot/fs.js';
 
 function isRegularFile(root, filePath) {
@@ -11,6 +12,7 @@ function isRegularFile(root, filePath) {
 }
 
 export function offlineSnapshots(options, repoRoot, hashList) {
+  for (const filePath of options.files) assertSafeAssignedPath(repoRoot, filePath);
   const baseDir = path.resolve(options.baseDir);
   const baseline = Object.assign(createFsSnapshot(baseDir, options.files), { baseDir });
   const possibleFiles = [...new Set([...options.files, ...Object.keys(hashList.files)])]
