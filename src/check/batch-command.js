@@ -3,8 +3,9 @@ import { selectBatch } from '../batches.js';
 import { loadConfig } from '../config.js';
 import { batchPaths, ensureManagedPath } from '../paths.js';
 import { readHashList } from '../snapshot/hash-list.js';
-import { readState, statusLabel, transitionState, updateState, writeState } from '../state.js';
-import { verifyBaseline, writeManagedFile } from '../run/artifacts.js';
+import { readState, statusLabel } from '../state.js';
+import { verifyBaseline } from '../run/artifacts.js';
+import { recordBatchCheck } from './results.js';
 import { runCheck } from './run.js';
 import { offlineSnapshots } from './snapshots.js';
 import { formatSummary } from './summary.js';
@@ -44,12 +45,7 @@ export async function runBatchCheckCommand(options, io) {
   }
   const result = { ...runCheck({ files: batch.files, baseline, target, hashList, config, offline: options.offline }), pass, batch: batch.id };
   if (!options.offline) {
-    const next = result.ok
-      ? transitionState(state, 'checked', { now: result.checkedAt, changes: { check: result } })
-      : updateState(state, { check: result });
-    if (state.check !== null) writeState(repoRoot, pass, batch.id, updateState(state, { check: null }));
-    writeManagedFile(repoRoot, paths.check, `${JSON.stringify(result, null, 2)}\n`);
-    writeState(repoRoot, pass, batch.id, next);
+    recordBatchCheck(repoRoot, paths, state, result);
   }
   io.stdout(formatSummary(result));
   return result.ok ? 0 : 1;
