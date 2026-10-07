@@ -84,6 +84,33 @@ describe('init', () => {
     expect(fs.existsSync(ignorePath)).toBe(false);
   });
 
+  test('.comment-tidy のジャンクションをたどらず書き込みを拒否する', async (context) => {
+    for (const gitignoreContent of [null, '.cache/\n']) {
+      const root = makeRoot();
+      const target = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-init-target-'));
+      roots.push(target);
+      const managedPath = path.join(root, '.comment-tidy');
+      const ignorePath = path.join(root, '.gitignore');
+      if (gitignoreContent !== null) writeFile(root, '.gitignore', gitignoreContent);
+      try {
+        fs.symlinkSync(target, managedPath, 'junction');
+      } catch (error) {
+        if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+          context.skip(`リンク作成不可: ${error.code}`);
+          return;
+        }
+        throw error;
+      }
+      const result = capture();
+
+      expect(await run(['init', '--repo', root], result.io)).toBe(EXIT_USAGE);
+      expect(result.err.join('\n')).toContain('リンクかディレクトリ以外');
+      expect(fs.readdirSync(target)).toEqual([]);
+      expect(fs.existsSync(ignorePath)).toBe(gitignoreContent !== null);
+      if (gitignoreContent !== null) expect(fs.readFileSync(ignorePath, 'utf8')).toBe(gitignoreContent);
+    }
+  });
+
   test('追跡ファイルから設定を作り、ルートの CMakeLists と配下のソースを含める', async () => {
     const root = makeRoot();
     const originalGitignore = '.cache/\r\n.comment-tidy/work\r\n';
