@@ -135,6 +135,16 @@ describe('init', () => {
     expect(fs.existsSync(path.join(root, '.gitignore'))).toBe(false);
   });
 
+  test.skipIf(process.platform !== 'win32')('--config の管理用の置き場の名前は大文字小文字が違っても受け付ける', async () => {
+    const root = makeRoot();
+    writeFile(root, 'src/a.js', 'export const a = 1;\n');
+    track(root, ['src/a.js']);
+    const result = capture();
+
+    expect(await run(['init', '--repo', root, '--config', path.join(root, '.COMMENT-TIDY', 'config.json')], result.io)).toBe(EXIT_OK);
+    expect(fs.existsSync(path.join(root, '.comment-tidy', 'config.json'))).toBe(true);
+  });
+
   test('追跡ファイルから設定を作り、ルートの CMakeLists と配下のソースを含める', async () => {
     const root = makeRoot();
     const originalGitignore = '.cache/\r\n.comment-tidy/work\r\n';
