@@ -22,3 +22,16 @@ export function createBatchWorktree(repoRoot, directory, base) {
 export function removeBatchWorktree(repoRoot, directory) {
   git(repoRoot, ['worktree', 'remove', '--force', directory]);
 }
+
+export function listWorktreeRegistrations(repoRoot) {
+  return git(repoRoot, ['worktree', 'list', '--porcelain', '-z']).split('\0\0').filter(Boolean).map((record) => {
+    const fields = record.split('\0').filter(Boolean);
+    const value = (name) => fields.find((field) => field.startsWith(`${name} `))?.slice(name.length + 1);
+    return {
+      directory: path.resolve(value('worktree')),
+      head: value('HEAD'),
+      detached: fields.includes('detached'),
+      locked: fields.some((field) => field === 'locked' || field.startsWith('locked ')),
+    };
+  });
+}
