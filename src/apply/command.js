@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { selectBatch } from '../batches.js';
 import { loadConfig } from '../config.js';
-import { batchPaths, ensureManagedPath, validateName } from '../paths.js';
+import { assertSafeAssignedPath, batchPaths, ensureManagedPath, validateName } from '../paths.js';
 import { changedAssignedFiles, createGitSnapshot, repositoryRoot } from '../snapshot/git.js';
 import { validateBatchWorktree } from '../snapshot/worktree.js';
 import { readState, transitionState, writeState } from '../state.js';
@@ -38,15 +38,9 @@ function git(root, args) {
 }
 
 function regularTarget(root, file) {
-  let target = root;
-  const parts = file.split('/');
-  for (const [index, part] of parts.entries()) {
-    target = path.join(target, part);
-    const status = fs.lstatSync(target);
-    if (status.isSymbolicLink() || (index === parts.length - 1 ? !status.isFile() || status.nlink > 1 : !status.isDirectory())) {
-      throw new Error(`担当ファイルの置き場にリンクか不正な要素があります: ${file}`);
-    }
-  }
+  const target = assertSafeAssignedPath(root, file);
+  const status = fs.lstatSync(target);
+  if (!status.isFile() || status.nlink > 1) throw new Error(`担当ファイルの置き場にリンクか不正な要素があります: ${file}`);
   return target;
 }
 

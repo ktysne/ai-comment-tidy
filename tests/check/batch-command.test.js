@@ -21,6 +21,19 @@ function capture() {
   const err = [];
   return { out, err, io: { stdout: (text) => out.push(text), stderr: (text) => err.push(text) } };
 }
+function replaceWithExternalJunction(directory, context) {
+  const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-outside-'));
+  roots.push(externalRoot);
+  const externalDirectory = path.join(externalRoot, path.basename(directory));
+  fs.renameSync(directory, externalDirectory);
+  try { fs.symlinkSync(externalDirectory, directory, 'junction'); }
+  catch (error) {
+    fs.renameSync(externalDirectory, directory);
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) { context.skip(`リンク作成不可: ${error.code}`); return false; }
+    throw error;
+  }
+  return externalDirectory;
+}
 async function makeRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-batch-check-'));
   roots.push(root);
@@ -109,6 +122,20 @@ describe('束を取るcheck', { timeout: 20000 }, () => {
     write(paths.baseline, 'src/a.cpp', 'int different;\r\n');
     expect(await run(['check', 'V01', '--offline', '--repo', root], capture().io)).toBe(2);
     expect(fs.existsSync(paths.check)).toBe(false);
+  });
+  test.for([['通常', false], ['--offline', true]])('担当ファイルの親が外部ジャンクションなら%sの検査で状態と記録を変えず拒否する', async ([, offline], context) => {
+    const { root, paths } = await makeRepo();
+    write(root, path.relative(root, paths.check), '以前の検査');
+    const stateBefore = fs.readFileSync(paths.state);
+    const checkBefore = fs.readFileSync(paths.check);
+    if (!replaceWithExternalJunction(path.join(paths.worktree, 'src'), context)) return;
+
+    const result = capture();
+    const args = ['check', 'V01', ...(offline ? ['--offline'] : []), '--repo', root];
+    expect(await run(args, result.io)).toBe(2);
+    expect(result.err.join('\n')).toContain('担当ファイルの置き場にリンクか不正な要素があります: src/a.cpp');
+    expect(fs.readFileSync(paths.state)).toEqual(stateBefore);
+    expect(fs.readFileSync(paths.check)).toEqual(checkBefore);
   });
   test.each([null, 'prepared', 'delegated', 'applied'])('%sからの通常検査は保存前に拒否する', async (status) => {
     const { root, paths } = await makeRepo();

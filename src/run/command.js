@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { selectBatchDefinition } from '../batches.js';
 import { isTargetFile, loadConfig } from '../config.js';
-import { ensureManagedPath, validateName } from '../paths.js';
+import { assertSafeAssignedPath, ensureManagedPath, validateName } from '../paths.js';
 import { promptContext } from '../prompt/context.js';
 import { generatePrompt } from '../prompt/run.js';
 import { changedAssignedFiles, createGitSnapshot, repositoryRoot } from '../snapshot/git.js';
@@ -59,7 +59,10 @@ export function runRunCommand(argv, io) {
     const state = readState(repoRoot, definition.pass, id);
     if (state?.status === 'delegated' || state?.status === 'applied') throw new Error(`${statusLabel(state)}の束は run できません: ${id}`);
     const present = exists(paths.worktree);
-    if (present) validateBatchWorktree(repoRoot, paths.worktree, definition.base);
+    if (present) {
+      if (!options.fresh) for (const file of batch.files) assertSafeAssignedPath(paths.worktree, file);
+      validateBatchWorktree(repoRoot, paths.worktree, definition.base);
+    }
     if (!options.fresh) {
       if (present && state === null) throw new Error(`作業ツリーに準備完了の記録がありません。確認して --fresh で作り直してください: ${id}`);
       if (!present && state !== null) throw new Error(`記録に対応する作業ツリーがありません。--fresh で作り直してください: ${id}`);

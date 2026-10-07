@@ -22,6 +22,26 @@ export function relativeFilePath(value) {
   return normalized;
 }
 
+export function assertSafeAssignedPath(root, file) {
+  const resolvedRoot = path.resolve(root);
+  const parts = file.split('/');
+  let target = resolvedRoot;
+  for (const [index, part] of parts.entries()) {
+    target = path.join(target, part);
+    let status;
+    try {
+      status = fs.lstatSync(target);
+    } catch (error) {
+      if (error.code === 'ENOENT') return path.join(resolvedRoot, ...parts);
+      throw error;
+    }
+    if (status.isSymbolicLink() || (index < parts.length - 1 && !status.isDirectory())) {
+      throw new Error(`担当ファイルの置き場にリンクか不正な要素があります: ${file}`);
+    }
+  }
+  return target;
+}
+
 export function batchDefinitionPath(repoRoot, pass) {
   return path.join(path.resolve(repoRoot), '.comment-tidy', `batches-${validateName(pass, '回')}.json`);
 }

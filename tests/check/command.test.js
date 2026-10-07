@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { EXIT_USAGE, run } from '../../src/cli.js';
 import { createHashList, writeHashList } from '../../src/snapshot/hash-list.js';
@@ -13,6 +13,19 @@ function capture() {
   const out = [];
   const err = [];
   return { out, err, io: { stdout: (text) => out.push(text), stderr: (text) => err.push(text) } };
+}
+function replaceWithExternalJunction(directory, context) {
+  const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-outside-'));
+  roots.push(externalRoot);
+  const externalDirectory = path.join(externalRoot, path.basename(directory));
+  fs.renameSync(directory, externalDirectory);
+  try { fs.symlinkSync(externalDirectory, directory, 'junction'); }
+  catch (error) {
+    fs.renameSync(externalDirectory, directory);
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) { context.skip(`リンク作成不可: ${error.code}`); return false; }
+    throw error;
+  }
+  return externalDirectory;
 }
 
 function makeRepo() {
@@ -85,6 +98,31 @@ describe('check コマンドの引数', () => {
     ], result.io)).toBe(0);
     expect(result.out[0]).toContain('check: 合格');
     expect(result.err).toEqual([]);
+  });
+
+  test('--offline --files は担当ファイルの親が外部ジャンクションなら内容を読まず終了コード2で止まる', async (context) => {
+    const root = makeRepo();
+    const baseDir = path.join(root, 'base-copy');
+    write(baseDir, 'src/a.cpp', 'int value; // before\n');
+    write(root, 'src/a.cpp', 'int value; // after\n');
+    const hashesPath = path.join(root, 'hashes.json');
+    const source = new Map([['src/a.cpp', Buffer.from('int value; // after\n')]]);
+    writeHashList(hashesPath, createHashList({
+      listFiles: () => [...source.keys()],
+      readMany: (files) => new Map(files.map((filePath) => [filePath, source.get(filePath)])),
+    }));
+    const externalDirectory = replaceWithExternalJunction(path.join(root, 'src'), context);
+    if (!externalDirectory) return;
+    const result = capture();
+    const read = vi.spyOn(fs, 'readFileSync');
+
+    expect(await run([
+      'check', '--offline', '--repo', root, '--base-dir', baseDir, '--hashes', hashesPath, '--files', 'src/a.cpp',
+    ], result.io)).toBe(2);
+    expect(result.err.join('\n')).toContain('担当ファイルの置き場にリンクか不正な要素があります: src/a.cpp');
+    expect(result.out).toEqual([]);
+    const targetPath = path.join(externalDirectory, 'a.cpp');
+    expect(read.mock.calls.some(([file]) => typeof file === 'string' && path.resolve(file) === targetPath)).toBe(false);
   });
 
   test('Git 経路の --out は検査結果を JSON で保存する', async () => {
