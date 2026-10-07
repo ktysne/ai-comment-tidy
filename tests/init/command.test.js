@@ -111,6 +111,30 @@ describe('init', () => {
     }
   });
 
+  test('--config で .comment-tidy 配下のジャンクションを通る先を指定しても書き込みを拒否する', async (context) => {
+    const root = makeRoot();
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-init-target-'));
+    roots.push(target);
+    const managedPath = path.join(root, '.comment-tidy');
+    fs.mkdirSync(managedPath);
+    try {
+      fs.symlinkSync(target, path.join(managedPath, 'shared'), 'junction');
+    } catch (error) {
+      if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+        context.skip(`リンク作成不可: ${error.code}`);
+        return;
+      }
+      throw error;
+    }
+    const result = capture();
+
+    expect(await run(['init', '--repo', root, '--config', path.join(managedPath, 'shared', 'config.json')], result.io)).toBe(EXIT_USAGE);
+    expect(result.err.join('\n')).toContain('リンクかディレクトリ以外');
+    expect(fs.readdirSync(target)).toEqual([]);
+    expect(fs.readdirSync(managedPath)).toEqual(['shared']);
+    expect(fs.existsSync(path.join(root, '.gitignore'))).toBe(false);
+  });
+
   test('追跡ファイルから設定を作り、ルートの CMakeLists と配下のソースを含める', async () => {
     const root = makeRoot();
     const originalGitignore = '.cache/\r\n.comment-tidy/work\r\n';

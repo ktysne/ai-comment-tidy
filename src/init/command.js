@@ -267,7 +267,10 @@ export function runInitCommand(argv, io) {
   const repoRoot = repositoryRoot(path.resolve(options.repoRoot ?? process.cwd()));
   const configPath = path.resolve(options.configPath ?? path.join(repoRoot, '.comment-tidy', 'config.json'));
   const criteriaPath = path.join(repoRoot, '.comment-tidy', `criteria-${options.pass}.md`);
-  if (options.configPath === undefined) ensureManagedPath(repoRoot, configPath);
+  const configInManagedDir = path.relative(path.join(repoRoot, '.comment-tidy'), configPath);
+  if (configInManagedDir && !configInManagedDir.startsWith('..') && !path.isAbsolute(configInManagedDir)) {
+    ensureManagedPath(repoRoot, configPath);
+  }
   ensureManagedPath(repoRoot, criteriaPath);
   const gitignorePath = path.join(repoRoot, '.gitignore');
   ensureUniqueTargets([
