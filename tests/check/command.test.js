@@ -125,17 +125,18 @@ describe('check コマンドの引数', () => {
     expect(read.mock.calls.some(([file]) => typeof file === 'string' && path.resolve(file) === targetPath)).toBe(false);
   });
 
-  test('--base --files は担当ファイルの親が外部ジャンクションなら内容を読まず終了コード2で止まる', async (context) => {
+  test.for([['ルート', ''], ['サブディレクトリ', 'other']])('--base --files は%sから実行しても担当ファイルの親が外部ジャンクションなら内容を読まず終了コード2で止まる', async ([, subdirectory], context) => {
     const root = makeRepo();
     write(root, 'src/a.cpp', 'int value; // before\n');
     const base = commitAll(root);
     write(root, 'src/a.cpp', 'int value; // after\n');
+    fs.mkdirSync(path.join(root, 'other'));
     const externalDirectory = replaceWithExternalJunction(path.join(root, 'src'), context);
     if (!externalDirectory) return;
     const result = capture();
     const read = vi.spyOn(fs, 'readFileSync');
 
-    expect(await run(['check', '--repo', root, '--base', base, '--files', 'src/a.cpp'], result.io)).toBe(2);
+    expect(await run(['check', '--repo', path.join(root, subdirectory), '--base', base, '--files', 'src/a.cpp'], result.io)).toBe(2);
     expect(result.err.join('\n')).toContain('担当ファイルの置き場にリンクか不正な要素があります: src/a.cpp');
     expect(result.out).toEqual([]);
     const targetPath = path.join(externalDirectory, 'a.cpp');
