@@ -316,7 +316,7 @@ describe('束の作業ツリーの片付け', { timeout: 20000 }, () => {
   test('削除途中の失敗では削除済みと未処理の束を返す', async () => {
     const { root, paths, second } = await fixture();
     const original = fs.unlinkSync;
-    vi.spyOn(fs, 'unlinkSync').mockImplementation(target => {
+    const failure = vi.spyOn(fs, 'unlinkSync').mockImplementation(target => {
       if (target === path.join(second.worktree, 'src/b.js')) throw new Error('削除失敗');
       return original(target);
     });
@@ -326,6 +326,56 @@ describe('束の作業ツリーの片付け', { timeout: 20000 }, () => {
     expect(result.err).toContain('未処理: なし');
     expect(fs.existsSync(paths.worktree)).toBe(false);
     expect(fs.existsSync(second.worktree)).toBe(true);
+    failure.mockRestore();
+    expect((await command(root, 'clean', 'V01', 'V02', '--force')).code).toBe(0);
+    expect(fs.existsSync(second.worktree)).toBe(false);
+    expect(registered(root, second.worktree)).toBe(false);
+  });
+  test.each([false, true])('統合先の属性が異なっていても対象側の改行を検査する: 変更=%s', async changed => {
+    const { root, paths } = await fixture();
+    write(root, '.gitattributes', '*.js text eol=lf\n');
+    if (changed) write(paths.worktree, 'outside.js', 'export const outside = 3;\n');
+    const result = await command(root, 'clean', 'V01');
+    expect(result.code).toBe(changed ? 2 : 0);
+    expect(fs.existsSync(paths.worktree)).toBe(changed);
+  });
+  test.each(['content', 'missing', 'type', 'ignored'])('途中失敗後でも担当外の新しい%sを拒否する', async kind => {
+    const { root, paths } = await fixture();
+    const target = path.join(paths.worktree, 'outside.js');
+    const original = fs.unlinkSync;
+    const failure = vi.spyOn(fs, 'unlinkSync').mockImplementation(file => {
+      if (file === target) throw new Error('削除失敗');
+      return original(file);
+    });
+    expect((await command(root, 'clean', 'V01')).code).toBe(2);
+    failure.mockRestore();
+    if (kind === 'content') write(paths.worktree, 'outside.js', 'export const outside = 3;\n');
+    if (kind === 'missing') fs.unlinkSync(path.join(paths.worktree, 'src/b.js'));
+    if (kind === 'type') { fs.unlinkSync(target); fs.mkdirSync(target); }
+    if (kind === 'ignored') write(paths.worktree, 'later.ignored', '別の作業');
+    expect((await command(root, 'clean', 'V01', '--force')).code).toBe(2);
+    expect(fs.existsSync(path.join(paths.worktree, 'src/空 白.js'))).toBe(true);
+  });
+  test('削除直後の記録失敗でも再開し担当外の残存バイト列を検査する', async () => {
+    const { root, paths } = await fixture();
+    const target = path.join(paths.worktree, '.gitattributes');
+    const original = fs.unlinkSync;
+    const failure = vi.spyOn(fs, 'unlinkSync').mockImplementation(file => {
+      original(file);
+      if (file === target) throw new Error('削除後の中断');
+    });
+    expect((await command(root, 'clean', 'V01')).code).toBe(2);
+    failure.mockRestore();
+    write(root, '.gitattributes', '*.js text eol=lf\n');
+    expect((await command(root, 'clean', 'V01')).code).toBe(0);
+    expect(fs.existsSync(paths.worktree)).toBe(false);
+  });
+  test('runで作り直した束は過去の削除記録を使わない', async () => {
+    const { root, paths } = await fixture({ applied: false });
+    expect((await command(root, 'clean', 'V01', '--force')).code).toBe(0);
+    expect((await command(root, 'run', 'V01', '--fresh')).code).toBe(0);
+    fs.unlinkSync(path.join(paths.worktree, 'outside.js'));
+    expect((await command(root, 'clean', 'V01', '--force')).code).toBe(2);
   });
   test.each([['V01', 'V01'], ['V99'], ['--pass', '../bad'], ['--force', '--force'], ['--dry-run', '--dry-run'], ['--unknown'], ['--config', 'relative.json']])('不正な引数では書き込まない: %j', async (...args) => {
     const { root, paths } = await fixture();

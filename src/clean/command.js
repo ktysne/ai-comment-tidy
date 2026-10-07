@@ -6,6 +6,7 @@ import { repositoryRoot } from '../snapshot/git.js';
 import { listWorktreeRegistrations, removeBatchWorktree } from '../snapshot/worktree.js';
 import { readState, statusLabel } from '../state.js';
 import { inspectCandidate } from './inspect.js';
+import { createProgress, readProgress, recordRemoval } from './progress.js';
 import { fileStatus, inspectTree, removeEmptyDirectories, removeEmptyRoot, unlinkTreeEntry } from './tree.js';
 
 function parseArgs(argv) {
@@ -47,15 +48,18 @@ function inspectJob(repoRoot, definition, batch, options) {
     throw new Error(`未取り込みの束には明示した束と --force が必要です: ${batch.id}`);
   }
   const registration = registrationFor(repoRoot, paths.worktree);
-  const tree = inspectCandidate(repoRoot, definition, batch, paths.worktree, registration);
-  return { batch, paths, state, tree, registration };
+  const progress = readProgress(repoRoot, paths, definition, batch, state);
+  const tree = inspectCandidate(repoRoot, definition, batch, paths.worktree, registration, progress);
+  const job = { batch, paths, state, tree, registration, progress };
+  job.progress ??= createProgress(job, definition);
+  return job;
 }
 
 function removeJob(repoRoot, job) {
   const directory = job.paths.worktree;
-  for (const link of job.tree.links) unlinkTreeEntry(repoRoot, directory, link, true);
+  for (const link of job.tree.links) recordRemoval(repoRoot, job, link, () => unlinkTreeEntry(repoRoot, directory, link, true));
   if (inspectTree(directory).links.length) throw new Error('解除していないリンクが残っています');
-  for (const file of job.tree.files.filter((file) => file !== '.git')) unlinkTreeEntry(repoRoot, directory, file, false);
+  for (const file of job.tree.files.filter((file) => file !== '.git')) recordRemoval(repoRoot, job, file, () => unlinkTreeEntry(repoRoot, directory, file, false));
   removeEmptyDirectories(repoRoot, directory, inspectTree(directory));
   const remaining = inspectTree(directory);
   if (remaining.links.length || remaining.files.some((file) => file !== '.git')) throw new Error(`通常ファイルやリンクが残っています: ${directory}`);

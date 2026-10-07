@@ -5,6 +5,7 @@ import { createGitSnapshot } from '../snapshot/git.js';
 import { validateBatchWorktree } from '../snapshot/worktree.js';
 import { ensureManagedPath } from '../paths.js';
 import { fileStatus, inspectTree } from './tree.js';
+import { sha256 } from '../snapshot/hash-list.js';
 
 function git(root, args) {
   return execFileSync('git', ['-C', root, ...args], { maxBuffer: 1 << 30 }).toString('utf8');
@@ -18,7 +19,7 @@ function baseEntries(repoRoot, base) {
   });
 }
 
-function verifyChanges(repoRoot, directory, definition, batch, tree) {
+function verifyChanges(repoRoot, directory, definition, batch, tree, progress) {
   const assigned = new Set(batch.files);
   const entries = baseEntries(repoRoot, definition.base);
   if (entries.some((entry) => entry.mode === '160000')) throw new Error('サブモジュールがある作業ツリーは削除できません');
@@ -37,28 +38,36 @@ function verifyChanges(repoRoot, directory, definition, batch, tree) {
     if (!assigned.has(file)) throw new Error(`担当外のステージ済み変更があります: ${file}`);
   }
   const outside = entries.filter((entry) => !assigned.has(entry.file));
-  for (const { file, mode, objectId } of outside) {
-    if (mode === '120000') {
-      const original = execFileSync('git', ['-C', repoRoot, 'cat-file', 'blob', objectId]);
-      const actual = links.has(file) ? Buffer.from(fs.readlinkSync(path.join(directory, file)))
-        : files.has(file) ? fs.readFileSync(path.join(directory, file)) : null;
-      if (!actual?.equals(original)) {
-        throw new Error(`担当外のリンクに変更があります: ${file}`);
-      }
-    } else if (!files.has(file)) throw new Error(`担当外のファイルに削除や種類の変更があります: ${file}`);
+  const saved = progress ? new Map(progress.outside.map(entry => [entry.file, entry])) : null;
+  if (saved && (saved.size !== outside.length || outside.some(entry => saved.get(entry.file)?.mode !== entry.mode))) {
+    throw new Error('片付けの記録に担当外の基準がありません');
   }
-  const regular = outside.filter((entry) => entry.mode !== '120000');
-  const contents = createGitSnapshot(repoRoot, definition.base).readMany(regular.map((entry) => entry.file));
-  for (const { file, mode } of regular) {
+  const regular = outside.filter(entry => entry.mode !== '120000');
+  const contents = saved ? null : createGitSnapshot(directory, definition.base).readMany(regular.map(entry => entry.file));
+  tree.outside = [];
+  for (const { file, mode, objectId } of outside) {
     const target = path.join(directory, file);
-    if (!fs.readFileSync(target).equals(contents.get(file))) throw new Error(`担当外のファイルに変更があります: ${file}`);
-    if (process.platform !== 'win32' && Boolean(fs.lstatSync(target).mode & 0o111) !== (mode === '100755')) {
+    const type = links.has(file) ? 'link' : files.has(file) ? 'file' : null;
+    const previous = saved?.get(file);
+    if (!type && !tree.directories.includes(file) && previous && (progress.removed.includes(file) || progress.pending === file)) {
+      tree.outside.push(previous);
+      continue;
+    }
+    if (!type || (mode !== '120000' && type !== 'file') || (previous && previous.type !== type)) {
+      throw new Error(`担当外のファイルに削除や種類の変更があります: ${file}`);
+    }
+    const actual = type === 'link' ? Buffer.from(fs.readlinkSync(target)) : fs.readFileSync(target);
+    const expectedHash = previous?.hash ?? sha256(mode === '120000'
+      ? execFileSync('git', ['-C', repoRoot, 'cat-file', 'blob', objectId]) : contents.get(file));
+    if (sha256(actual) !== expectedHash) throw new Error(`担当外のファイルに変更があります: ${file}`);
+    if (mode !== '120000' && process.platform !== 'win32' && Boolean(fs.lstatSync(target).mode & 0o111) !== (mode === '100755')) {
       throw new Error(`担当外のモードに変更があります: ${file}`);
     }
+    tree.outside.push({ file, mode, type, hash: expectedHash });
   }
 }
 
-export function inspectCandidate(repoRoot, definition, batch, directory, registration) {
+export function inspectCandidate(repoRoot, definition, batch, directory, registration, progress) {
   ensureManagedPath(repoRoot, directory);
   const status = fileStatus(directory);
   if (status && (!status.isDirectory() || status.isSymbolicLink())) throw new Error(`作業ツリーが通常のディレクトリではありません: ${directory}`);
@@ -80,7 +89,7 @@ export function inspectCandidate(repoRoot, definition, batch, directory, registr
     if (path.relative(path.resolve(backPointer), path.join(directory, '.git')) !== '') {
       throw new Error(`作業ツリーと Git の登録先が一致しません: ${directory}`);
     }
-    if (!empty) verifyChanges(repoRoot, directory, definition, batch, tree);
+    if (!empty) verifyChanges(repoRoot, directory, definition, batch, tree, progress);
   } else if (!empty) throw new Error(`作業ツリーの .git が欠けています: ${directory}`);
   return tree;
 }
