@@ -1,0 +1,59 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { run } from '../src/cli.js';
+
+const root = path.resolve('.cross-review/stage4-repo');
+if (fs.existsSync(root) && fs.readdirSync(root).length > 0) throw new Error('試行先が既に存在します');
+fs.mkdirSync(root, { recursive: true });
+const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
+const write = (file, content) => {
+  const target = path.join(root, file);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, content);
+};
+git('init', '--quiet', '-b', 'main');
+git('config', 'user.name', '段階4試行');
+git('config', 'user.email', 'stage4@example.test');
+git('config', 'core.autocrlf', 'true');
+write('.gitattributes', '*.js text eol=crlf\n');
+write('CLAUDE.md', '# 試行の規約\n\nコメントだけを変更する。日本語で書く。担当は src/retry.js のみ。\n');
+write('src/retry.js', [
+  '// 以前は待機せずに呼び出していた。',
+  '// 2025-01-01 に修正した。',
+  '// 次の処理を行う。',
+  '// 失敗した要求を再送する。',
+  '// 同じ要求を同時に送ると相手が重複処理するため、',
+  '// send の完了後にだけ次の send を呼ぶ。',
+  'export async function retry(send, attempts) {',
+  '  for (let index = 0; index < attempts; index++) {',
+  '    const result = await send();',
+  '    if (result.ok) return result;',
+  '  }',
+  '  return null;',
+  '}',
+  '',
+].join('\r\n'));
+write('other/untouched.js', 'export const marker = "担当外";\r\n');
+git('add', '--all');
+git('commit', '--quiet', '-m', '試行の基準');
+const cli = async (...args) => {
+  const code = await run([...args, '--repo', root], { stdout: console.log, stderr: console.error });
+  if (code !== 0) throw new Error(`${args[0]}: ${code}`);
+};
+await cli('init', '--pass', 'volume');
+const configPath = path.join(root, '.comment-tidy/config.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+config.scope.include = ['src/**'];
+config.areas = { src: ['src/**'] };
+config.rulesPaths = ['C:/Users/mss02968/.claude/skills/comment-writing/SKILL.md'];
+fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+git('add', '--all');
+git('commit', '--quiet', '-m', '試行の設定と判定基準');
+git('checkout', '--', 'src/retry.js', 'other/untouched.js');
+await cli('plan', 'volume', '--base', 'HEAD');
+git('add', '.comment-tidy/batches-volume.json');
+git('commit', '--quiet', '-m', '試行の束');
+git('switch', '-c', 'comment-tidy/volume');
+await cli('run', 'V01');
+console.log(`試行先: ${root}`);

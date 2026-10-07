@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { run } from '../src/cli.js';
+import { batchPaths } from '../src/paths.js';
+import { readState } from '../src/state.js';
+
+const toolRoot = fileURLToPath(new URL('../', import.meta.url));
+const toolCommit = execFileSync('git', ['-C', toolRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+const root = path.resolve('.cross-review/stage4-repo');
+const artifacts = path.resolve('docs/trials/2026-10-07-stage4');
+const paths = batchPaths(root, 'volume', 'V01');
+const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
+const steps = [];
+const cli = async (...args) => {
+  const stdout = [];
+  const stderr = [];
+  const code = await run([...args, '--repo', root], { stdout: text => stdout.push(text), stderr: text => stderr.push(text) });
+  steps.push({ command: args, code, stdout, stderr });
+  assert.equal(code, 0);
+  console.log(stdout.join('\n'));
+};
+const before = fs.readFileSync(path.join(root, 'src/retry.js'));
+const outside = fs.readFileSync(path.join(root, 'other/untouched.js'));
+const head = git('rev-parse', 'HEAD');
+const after = fs.readFileSync(path.join(paths.worktree, 'src/retry.js'));
+assert.equal(readState(root, 'volume', 'V01').status, 'delegated');
+assert.equal(execFileSync('git', ['-C', paths.worktree, 'diff', '--name-only'], { encoding: 'utf8' }).trim(), 'src/retry.js');
+assert.equal(execFileSync('git', ['-C', paths.worktree, 'ls-files', '--others', '--exclude-standard'], { encoding: 'utf8' }).trim(), '');
+assert.notDeepEqual(after, before);
+assert.equal(after.toString('utf8').replace(/\r\n/g, '').includes('\n'), false);
+assert.equal(after.toString('utf8').endsWith('\r\n'), true);
+assert.equal(after.toString('utf8').startsWith('\uFEFF'), false);
+assert.equal(after.toString('utf8').includes('send の完了後にだけ次の send を呼ぶ。'), true);
+await cli('report', 'V01', path.join(artifacts, 'report.md'));
+assert.equal(readState(root, 'volume', 'V01').status, 'reported');
+await cli('check', 'V01');
+assert.equal(readState(root, 'volume', 'V01').status, 'checked');
+await cli('apply', 'V01');
+assert.equal(readState(root, 'volume', 'V01').status, 'applied');
+assert.deepEqual(fs.readFileSync(path.join(root, 'src/retry.js')), after);
+assert.deepEqual(fs.readFileSync(path.join(root, 'other/untouched.js')), outside);
+assert.equal(git('rev-parse', 'HEAD'), head);
+await cli('status');
+fs.writeFileSync(path.join(artifacts, 'after.js.txt'), after);
+fs.copyFileSync(paths.state, path.join(artifacts, 'state.json'));
+fs.copyFileSync(paths.check, path.join(artifacts, 'check.json'));
+const hash = buffer => createHash('sha256').update(buffer).digest('hex');
+fs.writeFileSync(path.join(artifacts, 'results.json'), JSON.stringify({
+  toolCommit,
+  node: process.version,
+  platform: process.platform,
+  integrationHead: head,
+  before: { bytes: before.length, sha256: hash(before) },
+  after: { bytes: after.length, sha256: hash(after) },
+  assertions: ['担当だけ変更', '未追跡ファイルなし', 'CRLF保持', '末尾改行保持', 'BOMなし保持', '送信順序の制約保持', '取り込みのバイト一致', '担当外のバイト一致', 'HEAD不変'],
+  steps,
+}, null, 2) + '\n');

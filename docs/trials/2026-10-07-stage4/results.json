@@ -1,0 +1,71 @@
+{
+  "toolCommit": "b0defac",
+  "node": "v24.15.0",
+  "platform": "win32",
+  "integrationHead": "87424219b146ed14bb6b9e08af0bea01caa9860f",
+  "before": {
+    "bytes": 478,
+    "sha256": "0b18c7ed32e8cce3c8fc0d5bc0a86aa4e0cc7e4767b8c4d94d0a9c9856d6f873"
+  },
+  "after": {
+    "bytes": 321,
+    "sha256": "6f24e5a53a5fc11de4591e8e99fd5c3679eff125ca0a7fe328ac2dadf58750a0"
+  },
+  "assertions": [
+    "担当だけ変更",
+    "未追跡ファイルなし",
+    "CRLF保持",
+    "末尾改行保持",
+    "BOMなし保持",
+    "送信順序の制約保持",
+    "取り込みのバイト一致",
+    "担当外のバイト一致",
+    "HEAD不変"
+  ],
+  "steps": [
+    {
+      "command": [
+        "report",
+        "V01",
+        "D:\\Desktop\\Develop\\ai-comment-tidy\\.claude\\worktrees\\stage4\\docs\\trials\\2026-10-07-stage4\\report.md"
+      ],
+      "code": 0,
+      "stdout": [
+        "V01: 報告あり\n報告: D:\\Desktop\\Develop\\ai-comment-tidy\\.claude\\worktrees\\stage4\\.cross-review\\stage4-repo\\.comment-tidy\\work\\volume\\reports\\V01.md\n記録: 監査行なし"
+      ],
+      "stderr": []
+    },
+    {
+      "command": [
+        "check",
+        "V01"
+      ],
+      "code": 0,
+      "stdout": [
+        "check: 合格\n対象ファイル: 1 件\n不合格: 0 件、警告: 0 件"
+      ],
+      "stderr": []
+    },
+    {
+      "command": [
+        "apply",
+        "V01"
+      ],
+      "code": 0,
+      "stdout": [
+        "V01: 取り込み済み\n統合先: comment-tidy/volume\n担当ファイルを確認してコミットしてください"
+      ],
+      "stderr": []
+    },
+    {
+      "command": [
+        "status"
+      ],
+      "code": 0,
+      "stdout": [
+        "回: volume\n基準コミット: fe8af9c7227600a24fc9908a1e74813d49de3165\n実行者: impl-standard / 同時委譲の目安: 2 / 委譲中: 0 / 空き: 2\n\n| 束 | 領域 | 状態 | 基準の文字数 | 現在の文字数 | 基準比 | 読み取り先 | 実行 ID | 記録 |\n|---|---|---|---:|---:|---:|---|---|---|\n| V01 | src | 取り込み済み | 108 | 48 | 44.4% | 統合先 | - | 監査行なし |\n\n基準比は現在のコメント文字数 / 基準のコメント文字数です。基準が 0 の束は算出不可です。\n次に渡せる束: なし"
+      ],
+      "stderr": []
+    }
+  ]
+}
