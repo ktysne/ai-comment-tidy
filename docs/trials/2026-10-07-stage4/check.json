@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "pass": "volume",
+  "batch": "V01",
+  "base": "fe8af9c7227600a24fc9908a1e74813d49de3165",
+  "baseDir": null,
+  "offline": false,
+  "checkedAt": "2026-10-07T06:45:13.092Z",
+  "files": [
+    "src/retry.js"
+  ],
+  "ok": true,
+  "failures": [],
+  "warnings": [],
+  "summary": {}
+}
