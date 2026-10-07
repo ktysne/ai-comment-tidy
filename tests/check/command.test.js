@@ -125,6 +125,23 @@ describe('check コマンドの引数', () => {
     expect(read.mock.calls.some(([file]) => typeof file === 'string' && path.resolve(file) === targetPath)).toBe(false);
   });
 
+  test('--base --files は担当ファイルの親が外部ジャンクションなら内容を読まず終了コード2で止まる', async (context) => {
+    const root = makeRepo();
+    write(root, 'src/a.cpp', 'int value; // before\n');
+    const base = commitAll(root);
+    write(root, 'src/a.cpp', 'int value; // after\n');
+    const externalDirectory = replaceWithExternalJunction(path.join(root, 'src'), context);
+    if (!externalDirectory) return;
+    const result = capture();
+    const read = vi.spyOn(fs, 'readFileSync');
+
+    expect(await run(['check', '--repo', root, '--base', base, '--files', 'src/a.cpp'], result.io)).toBe(2);
+    expect(result.err.join('\n')).toContain('担当ファイルの置き場にリンクか不正な要素があります: src/a.cpp');
+    expect(result.out).toEqual([]);
+    const targetPath = path.join(externalDirectory, 'a.cpp');
+    expect(read.mock.calls.some(([file]) => typeof file === 'string' && path.resolve(file) === targetPath)).toBe(false);
+  });
+
   test('Git 経路の --out は検査結果を JSON で保存する', async () => {
     const root = makeRepo();
     write(root, 'src/a.cpp', 'int value; // before\n');
