@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { languageOf, languageFor, languages } from '../lex/index.js';
 import { matchesGlob } from '../glob.js';
+import { ensureManagedPath } from '../paths.js';
 import { createGitSnapshot, repositoryRoot } from '../snapshot/git.js';
 import { findForbiddenTerms, parseCriteriaSections } from './criteria.js';
 
@@ -266,6 +267,11 @@ export function runInitCommand(argv, io) {
   const repoRoot = repositoryRoot(path.resolve(options.repoRoot ?? process.cwd()));
   const configPath = path.resolve(options.configPath ?? path.join(repoRoot, '.comment-tidy', 'config.json'));
   const criteriaPath = path.join(repoRoot, '.comment-tidy', `criteria-${options.pass}.md`);
+  const configInManagedDir = path.relative(path.join(repoRoot, '.comment-tidy'), configPath);
+  if (configInManagedDir && !configInManagedDir.startsWith('..') && !path.isAbsolute(configInManagedDir)) {
+    ensureManagedPath(repoRoot, configPath);
+  }
+  ensureManagedPath(repoRoot, criteriaPath);
   const gitignorePath = path.join(repoRoot, '.gitignore');
   ensureUniqueTargets([
     { path: configPath },

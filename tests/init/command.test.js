@@ -84,6 +84,67 @@ describe('init', () => {
     expect(fs.existsSync(ignorePath)).toBe(false);
   });
 
+  test('.comment-tidy のジャンクションをたどらず書き込みを拒否する', async (context) => {
+    for (const gitignoreContent of [null, '.cache/\n']) {
+      const root = makeRoot();
+      const target = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-init-target-'));
+      roots.push(target);
+      const managedPath = path.join(root, '.comment-tidy');
+      const ignorePath = path.join(root, '.gitignore');
+      if (gitignoreContent !== null) writeFile(root, '.gitignore', gitignoreContent);
+      try {
+        fs.symlinkSync(target, managedPath, 'junction');
+      } catch (error) {
+        if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+          context.skip(`リンク作成不可: ${error.code}`);
+          return;
+        }
+        throw error;
+      }
+      const result = capture();
+
+      expect(await run(['init', '--repo', root], result.io)).toBe(EXIT_USAGE);
+      expect(result.err.join('\n')).toContain('リンクかディレクトリ以外');
+      expect(fs.readdirSync(target)).toEqual([]);
+      expect(fs.existsSync(ignorePath)).toBe(gitignoreContent !== null);
+      if (gitignoreContent !== null) expect(fs.readFileSync(ignorePath, 'utf8')).toBe(gitignoreContent);
+    }
+  });
+
+  test('--config で .comment-tidy 配下のジャンクションを通る先を指定しても書き込みを拒否する', async (context) => {
+    const root = makeRoot();
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-init-target-'));
+    roots.push(target);
+    const managedPath = path.join(root, '.comment-tidy');
+    fs.mkdirSync(managedPath);
+    try {
+      fs.symlinkSync(target, path.join(managedPath, 'shared'), 'junction');
+    } catch (error) {
+      if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) {
+        context.skip(`リンク作成不可: ${error.code}`);
+        return;
+      }
+      throw error;
+    }
+    const result = capture();
+
+    expect(await run(['init', '--repo', root, '--config', path.join(managedPath, 'shared', 'config.json')], result.io)).toBe(EXIT_USAGE);
+    expect(result.err.join('\n')).toContain('リンクかディレクトリ以外');
+    expect(fs.readdirSync(target)).toEqual([]);
+    expect(fs.readdirSync(managedPath)).toEqual(['shared']);
+    expect(fs.existsSync(path.join(root, '.gitignore'))).toBe(false);
+  });
+
+  test.skipIf(process.platform !== 'win32')('--config の管理用の置き場の名前は大文字小文字が違っても受け付ける', async () => {
+    const root = makeRoot();
+    writeFile(root, 'src/a.js', 'export const a = 1;\n');
+    track(root, ['src/a.js']);
+    const result = capture();
+
+    expect(await run(['init', '--repo', root, '--config', path.join(root, '.COMMENT-TIDY', 'config.json')], result.io)).toBe(EXIT_OK);
+    expect(fs.existsSync(path.join(root, '.comment-tidy', 'config.json'))).toBe(true);
+  });
+
   test('追跡ファイルから設定を作り、ルートの CMakeLists と配下のソースを含める', async () => {
     const root = makeRoot();
     const originalGitignore = '.cache/\r\n.comment-tidy/work\r\n';

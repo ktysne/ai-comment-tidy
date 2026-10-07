@@ -58,7 +58,8 @@ export function ensureManagedPath(repoRoot, target) {
   const root = path.resolve(repoRoot);
   const relative = path.relative(root, target);
   const parts = relative.split(path.sep);
-  if (parts[0] !== '.comment-tidy' || parts.some((part) => part === '..') || path.isAbsolute(relative)) {
+  const managedDir = process.platform === 'win32' ? parts[0].toLowerCase() : parts[0];
+  if (managedDir !== '.comment-tidy' || parts.some((part) => part === '..') || path.isAbsolute(relative)) {
     throw new Error(`管理対象の置き場ではありません: ${target}`);
   }
   let current = root;

@@ -190,6 +190,7 @@ rec-studio で、コメントの整理を 2 回に分けて行った(2026-09-18�
 ## 設定の雛形
 
 `init` は次を作る。既にあるファイルは上書きせず、その旨を出して終了コード 2 で止める。
+管理用の置き場 `.comment-tidy` またはその要素がリンクの場合、何も書き込まずに終了コード 2 で止める。
 
 - `.comment-tidy/config.json`:追跡しているファイルの拡張子から、見つかった言語だけを `languages` に書く(CMake は `**/CMakeLists.txt` も)。それらのファイルを含む第 1 階層のディレクトリを、`scope.include` と `areas` の初期値に書く。ルート直下に対応するファイルがあれば、そのファイル名も `scope.include` に書き、それらをまとめた領域 `root` を最後に足す。`passes` には `--pass` の回を 1 件書く。
 - `.comment-tidy/criteria-<回>.md`:道具の `templates/criteria.md` の写し。
