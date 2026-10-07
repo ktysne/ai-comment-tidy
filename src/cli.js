@@ -63,4 +63,5 @@ commands.set('status', async (...args) => (await import('./status/command.js')).
 commands.set('run', async (...args) => (await import('./run/command.js')).runRunCommand(...args));
 commands.set('delegate', async (...args) => (await import('./delegate/command.js')).runDelegateCommand(...args));
 commands.set('report', async (...args) => (await import('./report/command.js')).runReportCommand(...args));
+commands.set('apply', async (...args) => (await import('./apply/command.js')).runApplyCommand(...args));
 commands.set('install-hooks', runInstallHooksCommand);
