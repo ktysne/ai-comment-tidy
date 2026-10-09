@@ -36,7 +36,7 @@ export function formatAudit(result) {
 }
 
 export function writeAudit(repoRoot, outputs, result) {
-  // 後の段階が読む JSON を先に書き、Markdown だけが新しく残る状態を作らない。
+  // 後の段階が読む JSON を正本として先に書く。Markdown の書き込みに失敗すると古い Markdown が残るが、コマンドは失敗を返す。
   writeManagedFile(repoRoot, outputs.json, `${JSON.stringify(result, null, 2)}\n`);
   writeManagedFile(repoRoot, outputs.markdown, formatAudit(result));
 }
