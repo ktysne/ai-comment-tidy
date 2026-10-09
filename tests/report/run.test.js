@@ -43,6 +43,11 @@ describe('最終報告の解析', () => {
     expect(parseReport(report(), { ...options(), runId: null }).report).toEqual(empty);
     expect(parseReport(report().replace('run=run-1', 'other=value'), options()).report).toEqual(empty);
   });
+  test('同時実行の警告の行にある相手の実行IDを自分のIDと取り違えず、記録に残す', () => {
+    const text = report().replace('codex-agent: run=run-1\n', 'codex-agent: run=run-1\ncodex-agent: warning=concurrent-writer run=run-0 log=C:/logs/run-0.log\ncodex-agent: warning=concurrent-writer\n');
+    expect(parseReport(text, options())).toEqual({ report: empty, notes: ['同時実行の警告: run-0', '同時実行の警告: 相手の実行 ID なし'] });
+    expect(parseReport(text, { ...options(), runId: null }).report).toEqual(empty);
+  });
   test('別の実行IDや複数の実行IDは拒否する', () => {
     expect(() => parseReport(report().replace('run=run-1', 'run=other'), options())).toThrow('実行 ID');
     expect(() => parseReport(`${report()}codex-agent: run=other`, { ...options(), runId: null })).toThrow('実行 ID');
