@@ -1,0 +1,7 @@
+I01: 取り込み済み
+対象: D:\Desktop\Develop\ai-comment-tidy\.cross-review\stage5c-repo\.comment-tidy\worktrees\interrupt\I01
+I02: 取り込み済み
+対象: D:\Desktop\Develop\ai-comment-tidy\.cross-review\stage5c-repo\.comment-tidy\worktrees\interrupt\I02
+I03: 取り込み済み
+対象: D:\Desktop\Develop\ai-comment-tidy\.cross-review\stage5c-repo\.comment-tidy\worktrees\interrupt\I03
+clean: 確認のみ (3 束)

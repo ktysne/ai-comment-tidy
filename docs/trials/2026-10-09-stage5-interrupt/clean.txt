@@ -1,0 +1,9 @@
+I01: 削除済み
+対象: D:\Desktop\Develop\ai-comment-tidy\.cross-review\stage5c-repo\.comment-tidy\worktrees\interrupt\I01
+Git の登録: なし
+I02: 削除済み
+対象: D:\Desktop\Develop\ai-comment-tidy\.cross-review\stage5c-repo\.comment-tidy\worktrees\interrupt\I02
+Git の登録: なし
+I03: 削除済み
+対象: D:\Desktop\Develop\ai-comment-tidy\.cross-review\stage5c-repo\.comment-tidy\worktrees\interrupt\I03
+Git の登録: なし

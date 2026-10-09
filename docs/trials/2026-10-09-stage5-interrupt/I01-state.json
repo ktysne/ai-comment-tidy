@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "pass": "interrupt",
+  "batch": "I01",
+  "status": "applied",
+  "runId": "impl-standard-20261009-154135-1808",
+  "timestamps": {
+    "prepared": "2026-10-09T06:40:53.606Z",
+    "delegated": "2026-10-09T06:41:08.034Z",
+    "reported": "2026-10-09T06:42:39.814Z",
+    "checked": "2026-10-09T06:42:41.312Z",
+    "applied": "2026-10-09T06:42:41.322Z"
+  },
+  "notes": [],
+  "check": {
+    "schemaVersion": 1,
+    "pass": "interrupt",
+    "batch": "I01",
+    "base": "29720fa9e93049fae410d462b1ba190533c1022f",
+    "baseDir": null,
+    "offline": false,
+    "checkedAt": "2026-10-09T06:42:41.312Z",
+    "files": [
+      "src/a/retry.js"
+    ],
+    "ok": true,
+    "failures": [],
+    "warnings": [],
+    "summary": {}
+  },
+  "report": {
+    "docsCandidates": [],
+    "needsDecision": [],
+    "codeImprovements": []
+  }
+}
