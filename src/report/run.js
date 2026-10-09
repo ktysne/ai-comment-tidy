@@ -66,8 +66,12 @@ export function parseReport(text, { batch, baseline, runId = null }) {
   // 警告の行の run= は相手の実行 ID なので、自分の ID は最初の欄が run= の行からだけ取る。
   const runIds = [...new Set(audit.flatMap((line) => line.match(/^codex-agent:\s+run=(\S+)/u)?.slice(1) ?? []))];
   if (runIds.length > 1 || (runId !== null && runIds.some((id) => id !== runId))) throw new Error('報告の実行 ID が委譲の記録と一致しません');
-  const notes = [];
   const results = fieldValues('result');
+  const unfinished = lines.find((line) => line.trim())?.startsWith('再委譲:') ? '再委譲' : results.find((result) => ['rate-limited', 'unavailable'].includes(result));
+  if (unfinished) {
+    throw new Error(`実行者が作業を終えていない報告は取り込めません(${unfinished})。delegate --cancel で戻し、run で依頼文を作り直してから渡し直してください`);
+  }
+  const notes = [];
   if (!fieldValues('agent').length || !results.length) notes.push('監査行なし');
   for (const result of results) if (result !== 'ok') notes.push(`実行結果: ${result}`);
   for (const warning of fieldValues('warning')) {
