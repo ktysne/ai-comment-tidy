@@ -1,0 +1,57 @@
+{
+  "toolCommit": "fb68835",
+  "node": "v24.15.0",
+  "platform": "win32",
+  "integrationHead": "0d356c96f339a98f521341cbbcf8e04067a8373e",
+  "base": "5acfc122263342b7373515899888fd2ae4e7154e",
+  "batches": {
+    "P01": {
+      "file": "src/crlf/retry.js",
+      "runId": "impl-standard-20261009-150902-353",
+      "started": "2026-10-09T06:09:03Z",
+      "finished": "2026-10-09T06:10:09.904Z",
+      "delegated": "2026-10-09T15:08:27+09:00",
+      "before": {
+        "bytes": 478,
+        "sha256": "0b18c7ed32e8cce3c8fc0d5bc0a86aa4e0cc7e4767b8c4d94d0a9c9856d6f873"
+      },
+      "after": {
+        "bytes": 321,
+        "sha256": "6f24e5a53a5fc11de4591e8e99fd5c3679eff125ca0a7fe328ac2dadf58750a0"
+      },
+      "crlf": true,
+      "status": "applied",
+      "notes": []
+    },
+    "P02": {
+      "file": "src/lf/queue.js",
+      "runId": "impl-standard-20261009-150915-489",
+      "started": "2026-10-09T06:09:15Z",
+      "finished": "2026-10-09T06:10:22.657Z",
+      "delegated": "2026-10-09T15:08:46+09:00",
+      "before": {
+        "bytes": 371,
+        "sha256": "de539df64c6be8b303383c80e5892b1bfcf4fd2c4339d644781bb6c0cf94a1ea"
+      },
+      "after": {
+        "bytes": 250,
+        "sha256": "9a6a838a0550068e99f330a31500866cd995db3065ca408bb087311059a2fe4a"
+      },
+      "crlf": false,
+      "status": "applied",
+      "notes": [
+        "同時実行の警告: impl-standard-20261009-150902-353"
+      ]
+    }
+  },
+  "overlap": {
+    "start": "2026-10-09T06:09:15.000Z",
+    "end": "2026-10-09T06:10:09.904Z",
+    "seconds": 54.904
+  },
+  "untouched": {
+    "bytes": 36,
+    "sha256": "d45ee19ad5e2de56f2385362e478fdedaa0e7f5445f5c444e7acd9bedd3cf395"
+  },
+  "worktreesAfterClean": 1
+}

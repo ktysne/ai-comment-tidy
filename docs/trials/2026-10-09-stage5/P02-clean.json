@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "pass": "parallel",
+  "batch": "P02",
+  "base": "5acfc122263342b7373515899888fd2ae4e7154e",
+  "directory": "D:\\Desktop\\Develop\\ai-comment-tidy\\.cross-review\\stage5-repo\\.comment-tidy\\worktrees\\parallel\\P02",
+  "prepared": "2026-10-09T06:02:46.149Z",
+  "assigned": [
+    "src/lf/queue.js"
+  ],
+  "outside": [
+    {
+      "file": ".comment-tidy/config.json",
+      "mode": "100644",
+      "type": "file",
+      "hash": "066434e89877f620f84a73439238ebaa002a3855b58a579d63ddc2bfd738eb6c"
+    },
+    {
+      "file": ".comment-tidy/criteria-parallel.md",
+      "mode": "100644",
+      "type": "file",
+      "hash": "64f06dee5f36eaf3eebd37275ed073d4bded62eeb1f59ba596e77467ec1762e0"
+    },
+    {
+      "file": ".gitattributes",
+      "mode": "100644",
+      "type": "file",
+      "hash": "7ce34eedb5a27a34ac0bbc2c1d0e68119cbf1193e9037b8365068639739966b6"
+    },
+    {
+      "file": ".gitignore",
+      "mode": "100644",
+      "type": "file",
+      "hash": "e430588fada7abc625505ee7e10400fb96766916922d0a2c9c527ea2d297de9c"
+    },
+    {
+      "file": "CLAUDE.md",
+      "mode": "100644",
+      "type": "file",
+      "hash": "6607accd2a085aeaf1d8cd9f3d221708a1866eb8ba2d7dd41e0a378449437d07"
+    },
+    {
+      "file": "other/untouched.js",
+      "mode": "100644",
+      "type": "file",
+      "hash": "d45ee19ad5e2de56f2385362e478fdedaa0e7f5445f5c444e7acd9bedd3cf395"
+    },
+    {
+      "file": "src/crlf/retry.js",
+      "mode": "100644",
+      "type": "file",
+      "hash": "0b18c7ed32e8cce3c8fc0d5bc0a86aa4e0cc7e4767b8c4d94d0a9c9856d6f873"
+    }
+  ],
+  "removed": [
+    ".comment-tidy/config.json",
+    ".comment-tidy/criteria-parallel.md",
+    ".gitattributes",
+    ".gitignore",
+    "CLAUDE.md",
+    "other/untouched.js",
+    "src/crlf/retry.js",
+    "src/lf/queue.js"
+  ],
+  "pending": null
+}

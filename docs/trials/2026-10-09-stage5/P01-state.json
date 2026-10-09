@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "pass": "parallel",
+  "batch": "P01",
+  "status": "applied",
+  "runId": "impl-standard-20261009-150902-353",
+  "timestamps": {
+    "prepared": "2026-10-09T06:07:37.556Z",
+    "delegated": "2026-10-09T06:08:27.931Z",
+    "reported": "2026-10-09T06:10:31.608Z",
+    "checked": "2026-10-09T06:10:33.241Z",
+    "applied": "2026-10-09T06:10:33.253Z"
+  },
+  "notes": [],
+  "check": {
+    "schemaVersion": 1,
+    "pass": "parallel",
+    "batch": "P01",
+    "base": "5acfc122263342b7373515899888fd2ae4e7154e",
+    "baseDir": null,
+    "offline": false,
+    "checkedAt": "2026-10-09T06:10:33.241Z",
+    "files": [
+      "src/crlf/retry.js"
+    ],
+    "ok": true,
+    "failures": [],
+    "warnings": [],
+    "summary": {}
+  },
+  "report": {
+    "docsCandidates": [],
+    "needsDecision": [],
+    "codeImprovements": []
+  }
+}
