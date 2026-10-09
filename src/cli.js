@@ -56,6 +56,7 @@ async function readProcessStdin() {
 commands.set('lint', async (...args) => (await import('./lint/command.js')).runLintCommand(...args));
 commands.set('stats', async (...args) => (await import('./stats/command.js')).runStatsCommand(...args));
 commands.set('check', async (...args) => (await import('./check/command.js')).runCheckCommand(...args));
+commands.set('audit', async (...args) => (await import('./audit/command.js')).runAuditCommand(...args));
 commands.set('init', async (...args) => (await import('./init/command.js')).runInitCommand(...args));
 commands.set('plan', async (...args) => (await import('./plan/command.js')).runPlanCommand(...args));
 commands.set('prompt', async (...args) => (await import('./prompt/command.js')).runPromptCommand(...args));
