@@ -1,0 +1,52 @@
+{
+  "toolCommit": "0abe63b",
+  "node": "v24.15.0",
+  "platform": "win32",
+  "integrationHead": "5ab0d6dca075e6f141d664e7b4d5cfce5edec2b9",
+  "base": "29720fa9e93049fae410d462b1ba190533c1022f",
+  "batches": {
+    "I01": {
+      "status": "applied"
+    },
+    "I02": {
+      "status": "applied"
+    },
+    "I03": {
+      "status": "applied"
+    }
+  },
+  "A": {
+    "summary": "Codex の起動後、実行 ID を記録する前に窓口を止めた",
+    "delegated": "2026-10-09T15:41:08+09:00",
+    "windowStopped": "2026-10-09T15:41:43+09:00",
+    "run": "codex-agent: run=impl-standard-20261009-154135-1808 pid=344752 started=2026-10-09T06:41:35Z",
+    "recovery": "ログの置き場で委譲の記録より後に始まった実行を候補にし、--wait の報告の prompt-file= の依頼文が I01 の作業ディレクトリを含み、sha256 が一致することを照合してから --run-id を記録した"
+  },
+  "A2": {
+    "summary": "窓口が起動しなかった(自動モードの判定で拒否)",
+    "delegated": "2026-10-09T15:42:51+09:00",
+    "recovery": "ログの置き場に新しい実行が無いことを確かめ、delegate --cancel で用意済みに戻した"
+  },
+  "B": {
+    "summary": "実行 ID を記録した後、Codex の実行中に窓口を止めた",
+    "delegated": "2026-10-09T15:51:28+09:00",
+    "runIdRecorded": "2026-10-09T15:51:53+09:00",
+    "run": "codex-agent: run=impl-standard-20261009-155153-1602 pid=344952 started=2026-10-09T06:51:53Z",
+    "recovery": "status の実行 ID だけで --wait、report、check、apply を行った"
+  },
+  "C": {
+    "summary": "試験用フック CODEX_AGENT_SIMULATE_RATE_LIMIT=1 で窓口に利用上限を模擬させた",
+    "simulated": true,
+    "delegated": "2026-10-09T15:53:52+09:00",
+    "windowReport": [
+      "再委譲: impl-standard-claude",
+      "codex-agent: agent=impl-standard model=gpt-6-luna effort=xhigh sandbox=workspace-write codex_home=C:/Users/mss02968/.codex-subagent workdir=D:/Desktop/Develop/ai-comment-tidy",
+      "codex-agent: prompt-file=E:/Temp/claude/D--Desktop-Develop-ai-comment-tidy/11ef2472-9ca1-4301-b3c1-7b6993d91fff/scratchpad/codex-agent-impl-standard-20261009-155407-7nN9UM/prompt.md sha256=d88b99aa141c640069101190ec47a855ef03ec1e2fd2f50006c45c4587e4464c",
+      "codex-agent: result=rate-limited (simulated)"
+    ],
+    "resumed": "2026-10-09T15:54:53+09:00",
+    "run": "codex-agent: run=impl-standard-20261009-155535-20 pid=323312 started=2026-10-09T06:55:35Z",
+    "recovery": "作業ツリーの変更と実行のログが無いことを確かめ、delegate --cancel で戻し、フックを外してから --fresh なしで同じ依頼文を同じ窓口へ渡した"
+  },
+  "worktreesAfterClean": 1
+}

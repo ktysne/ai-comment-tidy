@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "pass": "interrupt",
+  "batch": "I01",
+  "base": "29720fa9e93049fae410d462b1ba190533c1022f",
+  "directory": "D:\\Desktop\\Develop\\ai-comment-tidy\\.cross-review\\stage5c-repo\\.comment-tidy\\worktrees\\interrupt\\I01",
+  "prepared": "2026-10-09T06:40:53.606Z",
+  "assigned": [
+    "src/a/retry.js"
+  ],
+  "outside": [
+    {
+      "file": ".comment-tidy/config.json",
+      "mode": "100644",
+      "type": "file",
+      "hash": "e34c0ea3d9ffe2777795d40daf6c12b0bb48e74b68621907296c9433d8688036"
+    },
+    {
+      "file": ".comment-tidy/criteria-interrupt.md",
+      "mode": "100644",
+      "type": "file",
+      "hash": "64f06dee5f36eaf3eebd37275ed073d4bded62eeb1f59ba596e77467ec1762e0"
+    },
+    {
+      "file": ".gitattributes",
+      "mode": "100644",
+      "type": "file",
+      "hash": "67c70af2084eb3e93d18830afb1dafaa9c8816b75ed13102af0ea6a3d7586889"
+    },
+    {
+      "file": ".gitignore",
+      "mode": "100644",
+      "type": "file",
+      "hash": "e430588fada7abc625505ee7e10400fb96766916922d0a2c9c527ea2d297de9c"
+    },
+    {
+      "file": "CLAUDE.md",
+      "mode": "100644",
+      "type": "file",
+      "hash": "6607accd2a085aeaf1d8cd9f3d221708a1866eb8ba2d7dd41e0a378449437d07"
+    },
+    {
+      "file": "other/untouched.js",
+      "mode": "100644",
+      "type": "file",
+      "hash": "d45ee19ad5e2de56f2385362e478fdedaa0e7f5445f5c444e7acd9bedd3cf395"
+    },
+    {
+      "file": "src/b/queue.js",
+      "mode": "100644",
+      "type": "file",
+      "hash": "de539df64c6be8b303383c80e5892b1bfcf4fd2c4339d644781bb6c0cf94a1ea"
+    },
+    {
+      "file": "src/c/cache.js",
+      "mode": "100644",
+      "type": "file",
+      "hash": "c69dc52b9117e813043ab236a4a4e951760b64d0f4cd1ed9d5208329078d7510"
+    }
+  ],
+  "removed": [
+    ".comment-tidy/config.json",
+    ".comment-tidy/criteria-interrupt.md",
+    ".gitattributes",
+    ".gitignore",
+    "CLAUDE.md",
+    "other/untouched.js",
+    "src/a/retry.js",
+    "src/b/queue.js",
+    "src/c/cache.js"
+  ],
+  "pending": null
+}

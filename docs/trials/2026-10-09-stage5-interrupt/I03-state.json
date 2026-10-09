@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "pass": "interrupt",
+  "batch": "I03",
+  "status": "applied",
+  "runId": "impl-standard-20261009-155535-20",
+  "timestamps": {
+    "prepared": "2026-10-09T06:54:35.799Z",
+    "delegated": "2026-10-09T06:54:53.018Z",
+    "reported": "2026-10-09T06:57:23.814Z",
+    "checked": "2026-10-09T06:57:25.312Z",
+    "applied": "2026-10-09T06:57:25.323Z"
+  },
+  "notes": [],
+  "check": {
+    "schemaVersion": 1,
+    "pass": "interrupt",
+    "batch": "I03",
+    "base": "29720fa9e93049fae410d462b1ba190533c1022f",
+    "baseDir": null,
+    "offline": false,
+    "checkedAt": "2026-10-09T06:57:25.312Z",
+    "files": [
+      "src/c/cache.js"
+    ],
+    "ok": true,
+    "failures": [],
+    "warnings": [],
+    "summary": {}
+  },
+  "report": {
+    "docsCandidates": [],
+    "needsDecision": [],
+    "codeImprovements": []
+  }
+}

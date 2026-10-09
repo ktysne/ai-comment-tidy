@@ -1,0 +1,91 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { run } from '../src/cli.js';
+
+// 実行者の書き込み範囲は窓口を起動したセッションの作業ディレクトリなので、試行先はその中に置く。
+const root = path.resolve(process.argv[2] ?? '.cross-review/stage5c-repo');
+if (fs.existsSync(root) && fs.readdirSync(root).length > 0) throw new Error('試行先が既に存在します');
+fs.mkdirSync(root, { recursive: true });
+const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
+const write = (file, content) => {
+  const target = path.join(root, file);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, content);
+};
+git('init', '--quiet', '-b', 'main');
+git('config', 'user.name', '段階5試行');
+git('config', 'user.email', 'stage5@example.test');
+git('config', 'core.autocrlf', 'true');
+write('.gitattributes', 'src/** text eol=lf\n');
+write('CLAUDE.md', '# 試行の規約\n\nコメントだけを変更する。日本語で書く。担当は依頼文に書かれたファイルのみ。\n');
+write('src/a/retry.js', [
+  '// 以前は待機せずに呼び出していた。',
+  '// 2025-01-01 に修正した。',
+  '// 次の処理を行う。',
+  '// 失敗した要求を再送する。',
+  '// 同じ要求を同時に送ると相手が重複処理するため、',
+  '// send の完了後にだけ次の send を呼ぶ。',
+  'export async function retry(send, attempts) {',
+  '  for (let index = 0; index < attempts; index++) {',
+  '    const result = await send();',
+  '    if (result.ok) return result;',
+  '  }',
+  '  return null;',
+  '}',
+  '',
+].join('\n'));
+write('src/b/queue.js', [
+  '// レビューで指摘されたので配列に変えた。',
+  '// キューを作る。',
+  '// 要素を末尾に足す。',
+  '// 取り出し側は単一のワーカーだけなので、',
+  '// 排他を取らずに shift してよい。',
+  'export function createQueue() {',
+  '  const items = [];',
+  '  return {',
+  '    push(item) { items.push(item); },',
+  '    take() { return items.shift(); },',
+  '  };',
+  '}',
+  '',
+].join('\n'));
+write('src/c/cache.js', [
+  '// 前回の修正でキャッシュを足した。',
+  '// 値を返す。',
+  '// 鍵が無ければ作る。',
+  '// 作る処理は重いが副作用が無いので、',
+  '// 同じ鍵で 2 回作られても結果は変わらない。',
+  'export function memo(make) {',
+  '  const cache = new Map();',
+  '  return (key) => {',
+  '    if (!cache.has(key)) cache.set(key, make(key));',
+  '    return cache.get(key);',
+  '  };',
+  '}',
+  '',
+].join('\n'));
+write('other/untouched.js', 'export const marker = "担当外";\n');
+git('add', '--all');
+git('commit', '--quiet', '-m', '試行の基準');
+const cli = async (...args) => {
+  const code = await run([...args, '--repo', root], { stdout: console.log, stderr: console.error });
+  if (code !== 0) throw new Error(`${args[0]}: ${code}`);
+};
+await cli('init', '--pass', 'interrupt');
+const configPath = path.join(root, '.comment-tidy/config.json');
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+config.scope.include = ['src/**'];
+config.areas = { a: ['src/a/**'], b: ['src/b/**'], c: ['src/c/**'] };
+config.rulesPaths = ['C:/Users/mss02968/.claude/skills/comment-writing/SKILL.md'];
+fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+git('add', '--all');
+git('commit', '--quiet', '-m', '試行の設定と判定基準');
+git('checkout', '--', 'src', 'other/untouched.js');
+await cli('plan', 'interrupt', '--base', 'HEAD');
+git('add', '.comment-tidy/batches-interrupt.json');
+git('commit', '--quiet', '-m', '試行の束');
+git('switch', '-c', 'comment-tidy/interrupt');
+await cli('run', 'I01', 'I02', 'I03');
+await cli('status');
+console.log(`試行先: ${root}`);
