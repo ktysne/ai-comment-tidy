@@ -4,7 +4,7 @@
 状態: 段階 5 まで実装と試行を終えた。
 指定窓口での並行、中断からの回収、利用上限からの再開の試行結果は [handover/2026-10-07-stage5.md](handover/2026-10-07-stage5.md) にある。
 本物の利用上限の発生は観測していない。
-次は段階 6 である。
+次は [handover/2026-10-09-stage6.md](handover/2026-10-09-stage6.md) の計画に従い、段階 6 の監査を進める。
 `lint` のフックはグローバルの設定へ登録して使っている。
 
 ## この資料の範囲
@@ -670,6 +670,14 @@ CLI は引数を `runCheck({ files, baseline, target, hashList, config, offline 
 
 `audit` は、削った hunk と足した hunk から、人が読むべき箇所を拾う。
 
+`audit <束> [--pass <回>] [--repo <統合先>] [--config <絶対パス>]` で実行する。
+対象は「報告あり」か「検査済み」の束で、束の状態は変えない。
+監査は人が読む材料を出すだけなので、`apply` は監査の実行を求めない。
+差分は束の作業ツリーで `git diff -U3 --no-renames <基準>` を担当ファイルに限って取り、hunk に分ける。
+hunk の行がコメントかは、削った行は基準の、足した行と前後の行は作業ツリーのファイルを `commentBlocks` で読み、行番号で決める。
+行頭の記号で決めないのは、文字列の中の `//` やコードと同じ行のコメントを取り違えるためである。
+`licensePatterns` に当たるブロックの行は監査の対象から外す。
+
 ### 重要語の消失と、それ以外の既定の検査
 
 - 重要語の消失: 削った文にあって、足した文にも、同じファイルの他の箇所にも、参照先の資料にも無い語。語は群(スレッドと寿命と順序、数値と単位、互換、撤去条件)に分け、既定の語に設定の `audit.keywordGroups` を足す。外部 API の語はプロジェクトごとに違うので、既定には持たない。
@@ -696,6 +704,10 @@ CLI は引数を `runCheck({ files, baseline, target, hashList, config, offline 
 
 `audit` は `.comment-tidy/work/<回>/audit-<束>.md` に、検査ごとに該当する hunk を、削った文と足した文を並べて書く。
 あわせて、束の削減率と、報告の JSON から拾った候補を書く。
+同じ内容を `audit-<束>.json` にも書き、段階 7 の PR 本文の表はこれを読む。
+JSON は `check` の結果と同じく `schemaVersion`、`pass`、`batch`、`base`、`auditedAt` を持ち、検査ごとの該当を `findings`(`check`、`file`、`line`、`removed`、`added`、`detail`)に、件数を `summary` に置く。
+検査の名前は `keyword-loss`、`full-delete`、`hedge`、`missing-ref`、`unresolved-loss`、`bracket`、`duplicate-line`、`new-term`、`self-reference`、`neighbor-leak` とする。
+メインセッションが規則を戻すときは束の作業ツリーを直し、`check` をやり直してから `apply` する。
 メインセッションはこの材料を読み、どこにも残っていない規則を 1 行で戻してから `apply` する。
 
 ## 取り込み
