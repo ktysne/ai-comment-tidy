@@ -36,6 +36,7 @@ export function formatAudit(result) {
 }
 
 export function writeAudit(repoRoot, outputs, result) {
-  writeManagedFile(repoRoot, outputs.markdown, formatAudit(result));
+  // 後の段階が読む JSON を先に書き、Markdown だけが新しく残る状態を作らない。
   writeManagedFile(repoRoot, outputs.json, `${JSON.stringify(result, null, 2)}\n`);
+  writeManagedFile(repoRoot, outputs.markdown, formatAudit(result));
 }

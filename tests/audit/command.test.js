@@ -86,7 +86,8 @@ describe('束の監査', { timeout: 20000 }, () => {
     const { code, result } = await audit(fixture);
     expect(code).toBe(0);
     expect(result.findings.find((finding) => finding.check === 'hedge')).toMatchObject({ file, line: 2 });
-    expect(result.findings.find((finding) => finding.check === 'keyword-loss').detail).toBe('スレッドと寿命と順序: 所有 / 数値と単位: 丸め、上限');
+    expect(result.findings.find((finding) => finding.check === 'keyword-loss')).toMatchObject({
+      line: 2, detail: 'スレッドと寿命と順序: 所有 / 数値と単位: 丸め、上限' });
   });
 
   test('変更のない担当では担当外の差分を読まず、該当なしの材料を書く', async () => {

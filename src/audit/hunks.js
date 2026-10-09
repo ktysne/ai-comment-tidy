@@ -31,6 +31,7 @@ export function extractHunks({ worktree, base, file, before, after, config }) {
   let newLine;
   let oldRemaining = 0;
   let newRemaining = 0;
+  let changed = false;
   for (const row of diff.split('\n')) {
     const header = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(row);
     if (header) {
@@ -40,7 +41,14 @@ export function extractHunks({ worktree, base, file, before, after, config }) {
       newRemaining = Number(header[4] ?? 1);
       hunk = { file, line: Math.max(1, newLine), oldLine: Math.max(1, oldLine), removed: [], added: [], context: [] };
       hunks.push(hunk);
+      changed = false;
     } else if (hunk && (oldRemaining || newRemaining)) {
+      // hunk の位置は前後の文脈ではなく、最初に変わった行で示す。
+      if (!changed && (row.startsWith('-') || row.startsWith('+'))) {
+        hunk.line = Math.max(1, newLine);
+        hunk.oldLine = Math.max(1, oldLine);
+        changed = true;
+      }
       if (row.startsWith('-')) {
         if (removedLines.has(oldLine)) hunk.removed.push(removedLines.get(oldLine));
         oldLine++;

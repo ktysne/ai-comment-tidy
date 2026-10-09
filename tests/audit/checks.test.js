@@ -38,6 +38,11 @@ describe('監査の既定の検査', () => {
     for (const word of ['atomic', 'ms', 'TODO']) expect(findings[0].detail).toContain(word);
     expect(inspect('// atomically items TODOs\n', '')).toEqual([]);
   });
+  test('数字の直後の単位を重要語として拾い、識別子の一部は拾わない', () => {
+    const [finding] = inspect('// 待ちは 100ms 60Hz 10px\n', '');
+    expect(finding.detail).toBe('数値と単位: Hz、ms、px');
+    expect(inspect('// timeout_ms\n', '')).toEqual([]);
+  });
   test('設定の語群を既定の語群へ追加し、新しい名前も使う', () => {
     const config = loadConfig('unused');
     config.audit = { keywordGroups: { '互換': ['独自キー'], '仕様': ['規約'] } };

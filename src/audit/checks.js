@@ -10,7 +10,8 @@ export const DEFAULT_KEYWORD_GROUPS = Object.freeze({
 function containsKeyword(text, keyword) {
   if (!/^[A-Za-z0-9_]+$/u.test(keyword)) return text.includes(keyword);
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-  return new RegExp(`\\b${escaped}\\b`, 'u').test(text);
+  // 前に数字を許すのは `100ms` の単位を拾うためである。`\b` は数字と英字の間を境界とみなさない。
+  return new RegExp(`(?<![A-Za-z_])${escaped}(?![A-Za-z0-9_])`, 'u').test(text);
 }
 
 function keywordGroups(config) {
