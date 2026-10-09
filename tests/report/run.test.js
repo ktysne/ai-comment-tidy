@@ -39,6 +39,16 @@ describe('最終報告の解析', () => {
     expect(parseReport(report().replace('agent=impl-standard', 'other=value'), options()).notes).toContain('監査行なし');
     expect(parseReport(report().replace('result=ok', 'other=value'), options()).notes).toContain('監査行なし');
   });
+  test.each([
+    ['再委譲', `再委譲: impl-standard-claude\n${report().replace('result=ok', 'result=rate-limited (simulated)')}`],
+    ['rate-limited', report().replace('result=ok', 'result=rate-limited')],
+    ['unavailable', report().replace('result=ok', 'result=unavailable')],
+  ])('実行者が作業を終えていない報告を拒否する: %s', (label, text) => {
+    expect(() => parseReport(text, options())).toThrow(`(${label})`);
+  });
+  test('失敗で終わった報告は監査の材料として取り込む', () => {
+    expect(parseReport(report().replace('result=ok', 'result=failed exit=1'), options())).toEqual({ report: empty, notes: ['実行結果: failed'] });
+  });
   test('実行IDが未記録か監査行にない報告も取り込める', () => {
     expect(parseReport(report(), { ...options(), runId: null }).report).toEqual(empty);
     expect(parseReport(report().replace('run=run-1', 'other=value'), options()).report).toEqual(empty);
