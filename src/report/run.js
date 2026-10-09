@@ -63,7 +63,8 @@ export function parseReport(text, { batch, baseline, runId = null }) {
   const lines = text.split(/\r?\n/u);
   const audit = lines.filter((line) => line.startsWith('codex-agent:'));
   const fieldValues = (field) => audit.flatMap((line) => [...line.matchAll(new RegExp(`(?:^|\\s)${field}=(\\S+)`, 'gu'))].map((match) => match[1]));
-  const runIds = [...new Set(fieldValues('run'))];
+  // 警告の行の run= は相手の実行 ID なので、自分の ID は最初の欄が run= の行からだけ取る。
+  const runIds = [...new Set(audit.flatMap((line) => line.match(/^codex-agent:\s+run=(\S+)/u)?.slice(1) ?? []))];
   if (runIds.length > 1 || (runId !== null && runIds.some((id) => id !== runId))) throw new Error('報告の実行 ID が委譲の記録と一致しません');
   const notes = [];
   const results = fieldValues('result');
@@ -71,6 +72,9 @@ export function parseReport(text, { batch, baseline, runId = null }) {
   for (const result of results) if (result !== 'ok') notes.push(`実行結果: ${result}`);
   for (const warning of fieldValues('warning')) {
     if (['child-spawn-failed', 'sandbox-build-failed'].includes(warning)) notes.push(`実行者の検証未完了: ${warning}`);
+  }
+  for (const line of audit.filter((entry) => /^codex-agent:\s+warning=concurrent-writer(?:\s|$)/u.test(entry))) {
+    notes.push(`同時実行の警告: ${line.match(/\srun=(\S+)/u)?.[1] ?? '相手の実行 ID なし'}`);
   }
   const body = lines.filter((line) => !line.startsWith('codex-agent:')).join('\n');
   const json = lastJsonBlock(body);
