@@ -1,0 +1,13 @@
+// 以前は待機せずに呼び出していた。
+// 2025-01-01 に修正した。
+// 次の処理を行う。
+// 失敗した要求を再送する。
+// 同じ要求を同時に送ると相手が重複処理するため、
+// send の完了後にだけ次の send を呼ぶ。
+export async function retry(send, attempts) {
+  for (let index = 0; index < attempts; index++) {
+    const result = await send();
+    if (result.ok) return result;
+  }
+  return null;
+}

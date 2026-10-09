@@ -1,0 +1,8 @@
+// 取り出し側は単一のワーカーだけなので、排他を取らずに shift してよい。
+export function createQueue() {
+  const items = [];
+  return {
+    push(item) { items.push(item); },
+    take() { return items.shift(); },
+  };
+}

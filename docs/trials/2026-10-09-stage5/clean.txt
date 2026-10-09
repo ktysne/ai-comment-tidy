@@ -1,0 +1,6 @@
+P01: 削除済み
+対象: D:\Desktop\Develop\ai-comment-tidy\.cross-review\stage5-repo\.comment-tidy\worktrees\parallel\P01
+Git の登録: なし
+P02: 削除済み
+対象: D:\Desktop\Develop\ai-comment-tidy\.cross-review\stage5-repo\.comment-tidy\worktrees\parallel\P02
+Git の登録: なし
