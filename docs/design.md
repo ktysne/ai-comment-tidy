@@ -9,7 +9,7 @@
 
 ## この資料の範囲
 
-ai-comment-tidy は、既存のリポジトリのソースコメントを、グローバルの「コメント記述ルール」(`C:\Users\mss02968\.claude\CLAUDE.md` の同名の節。例と理由はスキル `~/.claude/skills/comment-writing/SKILL.md`)に適合させる作業のための道具である。
+ai-comment-tidy は、既存のリポジトリのソースコメントを、グローバルの「コメント記述ルール」(`<USERPROFILE>\.claude\CLAUDE.md` の同名の節。例と理由はスキル `~/.claude/skills/comment-writing/SKILL.md`)に適合させる作業のための道具である。
 束ごとに AI へ整理を任せ、機械で検査し、メインセッションが監査して取り込む。
 あわせて、新しく書くコメントが同じルールから外れないよう、編集の直後とコミットの直前に検査する(`lint`)。
 この資料は、道具の目的、全体の流れ、配り方、コマンド、設定、検査と監査の規則、実行者への委譲、実装の段階を定める。
@@ -125,8 +125,8 @@ rec-studio で、コメントの整理を 2 回に分けて行った(2026-09-18�
 ```json
 {
   "rulesPaths": [
-    "C:/Users/mss02968/.claude/CLAUDE.md",
-    "C:/Users/mss02968/.claude/skills/comment-writing/SKILL.md"
+    "~/.claude/CLAUDE.md",
+    "~/.claude/skills/comment-writing/SKILL.md"
   ],
   "scope": {
     "include": ["src/**", "tests/**", "tools/**/*.js", "**/CMakeLists.txt", "*.bat"],

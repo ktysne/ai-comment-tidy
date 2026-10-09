@@ -62,7 +62,7 @@ const configPath = path.join(root, '.comment-tidy/config.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 config.scope.include = ['src/**'];
 config.areas = { crlf: ['src/crlf/**'], lf: ['src/lf/**'] };
-config.rulesPaths = ['C:/Users/mss02968/.claude/skills/comment-writing/SKILL.md'];
+config.rulesPaths = ['~/.claude/skills/comment-writing/SKILL.md'];
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
 git('add', '--all');
 git('commit', '--quiet', '-m', '試行の設定と判定基準');

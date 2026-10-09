@@ -25,7 +25,7 @@
 D:/Desktop/Develop/ai-comment-tidy/.claude/worktrees/stage4/.cross-review/stage4-repo/.comment-tidy/worktrees/volume/V01
 
 ## 必ず読むもの
-- C:/Users/mss02968/.claude/skills/comment-writing/SKILL.md
+- ~/.claude/skills/comment-writing/SKILL.md
 - D:/Desktop/Develop/ai-comment-tidy/.claude/worktrees/stage4/.cross-review/stage4-repo/.comment-tidy/criteria-volume.md
 
 ## 担当ファイルの状態
