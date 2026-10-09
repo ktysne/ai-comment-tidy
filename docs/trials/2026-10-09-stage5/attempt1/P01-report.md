@@ -1,7 +1,7 @@
-codex-agent: agent=impl-standard model=gpt-6-luna effort=xhigh sandbox=workspace-write codex_home=C:/Users/mss02968/.codex-subagent workdir=D:/Desktop/Develop/ai-comment-tidy
+codex-agent: agent=impl-standard model=gpt-6-luna effort=xhigh sandbox=workspace-write codex_home=~/.codex-subagent workdir=D:/Desktop/Develop/ai-comment-tidy
 codex-agent: prompt-file=E:/Temp/claude/D--Desktop-Develop-ai-comment-tidy/11ef2472-9ca1-4301-b3c1-7b6993d91fff/scratchpad/codex-agent-impl-standard-20261009-150033-2TGsEp/prompt.md sha256=bd902bd013b511cc76462f2363a775424db997c7540127e2cad16997c0a74398
 codex-agent: run=impl-standard-20261009-150053-420 pid=296752 started=2026-10-09T06:00:53Z
-codex-agent: log=C:/Users/mss02968/.claude/codex-agent/logs/impl-standard-20261009-150053-420.log
+codex-agent: log=~/.claude/codex-agent/logs/impl-standard-20261009-150053-420.log
 ## あなたの判断が必要なこと
 
 指定された作業ツリーは書き込み許可範囲外（許可範囲: `D:\Desktop\Develop\ai-comment-tidy`）のため、編集できませんでした。先頭4行は削除対象、重複送信を防ぐ順序条件を述べた5〜6行目は維持対象と判断しました。

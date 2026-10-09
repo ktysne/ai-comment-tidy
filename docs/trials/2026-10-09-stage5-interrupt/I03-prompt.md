@@ -25,7 +25,7 @@
 D:/Desktop/Develop/ai-comment-tidy/.cross-review/stage5c-repo/.comment-tidy/worktrees/interrupt/I03
 
 ## 必ず読むもの
-- C:/Users/mss02968/.claude/skills/comment-writing/SKILL.md
+- ~/.claude/skills/comment-writing/SKILL.md
 - D:/Desktop/Develop/ai-comment-tidy/.cross-review/stage5c-repo/.comment-tidy/criteria-interrupt.md
 
 ## 担当ファイルの状態
