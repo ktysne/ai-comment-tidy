@@ -101,6 +101,26 @@ describe('run コマンド', { timeout: 20000 }, () => {
     expect(await run(['check', '--offline', '--repo', paths.worktree, '--base-dir', paths.baseline, '--hashes', paths.hashes,
       '--config', path.join(root, '.comment-tidy/config.json'), '--files', 'src/a.cpp'], capture().io)).toBe(1);
   });
+  test('scope の外の資料もハッシュに載せ、offline の検査が参照を照合し、資料の書き換えを止める', async () => {
+    const { root, definition, paths } = makeRepo();
+    write(root, 'docs/plan.md', '# 計画\n## 3. 方針\n');
+    write(root, 'src/a.cpp', '// 方針は docs/plan.md「3. 方針」にある。\nint a;\n');
+    git(root, ['add', '--all']);
+    git(root, ['commit', '--quiet', '-m', '資料']);
+    const base = git(root, ['rev-parse', 'HEAD']);
+    write(root, '.comment-tidy/batches-volume.json', JSON.stringify({ ...definition, base }));
+    expect(await run(['run', 'V01', '--repo', root], capture().io)).toBe(0);
+    expect(Object.keys(readHashList(paths.hashes).files)).toContain('docs/plan.md');
+    const offline = ['check', '--offline', '--repo', paths.worktree, '--base-dir', paths.baseline, '--hashes', paths.hashes,
+      '--config', path.join(root, '.comment-tidy/config.json'), '--files', 'src/a.cpp'];
+    const clean = capture();
+    expect(await run(offline, clean.io)).toBe(0);
+    expect(clean.out.join('\n')).not.toContain('doc-ref');
+    write(paths.worktree, 'docs/plan.md', '# 計画\n## 3. 方針の変更\n');
+    const edited = capture();
+    expect(await run(offline, edited.io)).toBe(1);
+    expect(edited.out.join('\n')).toContain('docs/plan.md [out-of-scope-change]');
+  });
   test('再開は担当の変更を案内し、基準と状態を上書きしない', async () => {
     const { root, paths } = makeRepo();
     expect(await run(['run', 'V01', '--repo', root], capture().io)).toBe(0);

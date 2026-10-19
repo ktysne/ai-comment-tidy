@@ -63,15 +63,18 @@ export function markdownHeadings(source) {
   return headings;
 }
 
-export function resolveDocPaths(doc, docsRoot, files) {
+/** `docsRoot` の下の Markdown の資料かどうか。資料の参照の照合先になるファイルを決める。 */
+export function isDocumentFile(filePath, docsRoot) {
   const normalizedRoot = docsRoot.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '');
   const rootPrefix = normalizedRoot === '.' || normalizedRoot === '' ? '' : `${normalizedRoot}/`;
-  return files.filter((filePath) => {
-    const normalized = filePath.replace(/\\/g, '/');
-    const fileName = path.posix.basename(normalized);
-    if (!normalized.startsWith(rootPrefix) || !fileName.toLowerCase().endsWith('.md')) return false;
-    return fileName.startsWith(doc);
-  });
+  const normalized = filePath.replace(/\\/g, '/');
+  return normalized.startsWith(rootPrefix) && normalized.toLowerCase().endsWith('.md');
+}
+
+export function resolveDocPaths(doc, docsRoot, files) {
+  return files.filter((filePath) => (
+    isDocumentFile(filePath, docsRoot) && path.posix.basename(filePath.replace(/\\/g, '/')).startsWith(doc)
+  ));
 }
 
 const SECTION_NUMBER_PATTERN = /^§?\s*(\d+(?:\.\d+)*)$/;

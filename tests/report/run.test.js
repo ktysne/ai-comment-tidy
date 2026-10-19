@@ -32,6 +32,27 @@ describe('最終報告の解析', () => {
     const text = report().replaceAll('```json', '~~~~JSON').replaceAll('```', '~~~~').replaceAll('\n', '\r\n');
     expect(parseReport(text, options())).toEqual({ report: empty, notes: [] });
   });
+  test('コードフェンスの無い末尾のJSONを、監査行の後でも読む', () => {
+    const value = { ...empty, needsDecision: [candidate] };
+    const text = `codex-agent: agent=impl-standard\ncodex-agent: run=run-1\n## 見つけた未対応の問題\nなし。\n\n${JSON.stringify(value, null, 2)}\ncodex-agent: result=ok\n`;
+    expect(parseReport(text, options())).toEqual({ report: value, notes: [] });
+  });
+  test('コードフェンスのJSONがあれば、末尾の裸のJSONより優先する', () => {
+    const value = { ...empty, needsDecision: [candidate] };
+    const text = report(empty).replace('codex-agent: result=ok\n', `${JSON.stringify(value, null, 2)}\ncodex-agent: result=ok\n`);
+    expect(parseReport(text, options()).report).toEqual(empty);
+  });
+  test('閉じていない非JSONのコードフェンスの中のJSONを、末尾の裸のJSONとして読まない', () => {
+    const json = JSON.stringify({ ...empty, needsDecision: [candidate] }, null, 2);
+    for (const opening of ['~~~text', '```']) {
+      const text = `codex-agent: agent=impl-standard\ncodex-agent: run=run-1\n例:\n${opening}\n${json}\ncodex-agent: result=ok\n`;
+      expect(parseReport(text, options())).toEqual({ report: null, notes: ['報告の JSON なし'] });
+    }
+  });
+  test('末尾がJSONとして読めない裸の括弧なら、JSONなしとして記録する', () => {
+    const text = 'codex-agent: agent=impl-standard\ncodex-agent: run=run-1\n本文\n{\n  壊れた\n}\ncodex-agent: result=ok\n';
+    expect(parseReport(text, options())).toEqual({ report: null, notes: ['報告の JSON なし'] });
+  });
   test('JSONや監査行がない場合は記録を添え、検証警告と失敗結果も保持する', () => {
     expect(parseReport('本文のみ', options())).toEqual({ report: null, notes: ['監査行なし', '報告の JSON なし'] });
     const text = report().replace('result=ok', 'warning=child-spawn-failed\ncodex-agent: warning=sandbox-build-failed\ncodex-agent: result=failed');

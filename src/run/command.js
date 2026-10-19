@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { selectBatchDefinition } from '../batches.js';
 import { isTargetFile, loadConfig } from '../config.js';
+import { isDocumentFile } from '../docs-refs.js';
 import { assertSafeAssignedPath, ensureManagedPath, validateName } from '../paths.js';
 import { promptContext } from '../prompt/context.js';
 import { generatePrompt } from '../prompt/run.js';
@@ -48,7 +49,9 @@ export function runRunCommand(argv, io) {
   const config = loadConfig(repoRoot, configPath);
   const definition = selectBatchDefinition(repoRoot, options.pass);
   const baseline = createGitSnapshot(repoRoot, definition.base);
-  const scopeFiles = baseline.listFiles().filter((file) => isTargetFile(file, config));
+  // 資料も載せる。check --offline は資料の一覧をハッシュ一覧から得るため、scope の外の資料を落とすと参照を照合できない。
+  const hashedFile = (file) => isTargetFile(file, config) || isDocumentFile(file, config.docs.root);
+  const scopeFiles = baseline.listFiles().filter(hashedFile);
   const jobs = options.batches.map((id) => {
     const batch = definition.batches.find((item) => item.id === id);
     if (!batch) throw new Error(`束がありません: ${definition.pass}/${id}`);
@@ -86,7 +89,7 @@ export function runRunCommand(argv, io) {
     if (!present || options.fresh) {
       createBatchWorktree(repoRoot, paths.worktree, definition.base);
       const snapshot = createGitSnapshot(paths.worktree);
-      const files = snapshot.listFiles().filter((file) => isTargetFile(file, config));
+      const files = snapshot.listFiles().filter(hashedFile);
       const hashList = createHashList(snapshot, [...new Set([...files, ...batch.files])]);
       const contents = snapshot.readMany(batch.files);
       const prompt = generatePrompt({ ...context, snapshot });
