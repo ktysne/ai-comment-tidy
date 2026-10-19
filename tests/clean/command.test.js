@@ -77,6 +77,28 @@ afterEach(() => {
 });
 
 describe('束の作業ツリーの片付け', { timeout: 20000 }, () => {
+  test('片付け後の記録に全件の削除済みと空の処理中パスを残す', async () => {
+    const { root, paths } = await fixture();
+    expect((await command(root, 'clean', 'V01')).code).toBe(0);
+
+    const progressPath = path.join(path.dirname(paths.state), '..', 'clean-V01.json');
+    const progress = JSON.parse(fs.readFileSync(progressPath, 'utf8'));
+    expect(progress.removed).toEqual(expect.arrayContaining([
+      '.gitattributes', '.gitignore', 'outside.js', 'src/b.js', 'src/空 白.js',
+    ]));
+    expect(progress.removed).toHaveLength(5);
+    expect(progress.pending).toBeNull();
+  });
+  test('通常ファイルごとに一度と最後に一度だけ進捗を記録する', async () => {
+    const { root, paths } = await fixture();
+    const rename = vi.spyOn(fs, 'renameSync');
+
+    expect((await command(root, 'clean', 'V01')).code).toBe(0);
+
+    const progressPath = path.resolve(path.dirname(paths.state), '..', 'clean-V01.json');
+    const writes = rename.mock.calls.filter(([, target]) => path.resolve(target) === progressPath);
+    expect(writes).toHaveLength(6);
+  });
   test('取り込み済みだけを削除し証拠と他の束を保持し再実行できる', async () => {
     const { root, paths, second } = await fixture();
     write(paths.worktree, 'src/空 白.js', '\uFEFFexport const a = 1;\r\n');
@@ -356,19 +378,47 @@ describe('束の作業ツリーの片付け', { timeout: 20000 }, () => {
     expect((await command(root, 'clean', 'V01', '--force')).code).toBe(2);
     expect(fs.existsSync(path.join(paths.worktree, 'src/空 白.js'))).toBe(true);
   });
-  test('削除直後の記録失敗でも再開し担当外の残存バイト列を検査する', async () => {
+  test('途中で削除したパスだけを記録し再実行で最後まで片付ける', async () => {
     const { root, paths } = await fixture();
-    const target = path.join(paths.worktree, '.gitattributes');
+    const target = path.join(paths.worktree, '.gitignore');
     const original = fs.unlinkSync;
     const failure = vi.spyOn(fs, 'unlinkSync').mockImplementation(file => {
       original(file);
       if (file === target) throw new Error('削除後の中断');
     });
-    expect((await command(root, 'clean', 'V01')).code).toBe(2);
+    const interrupted = await command(root, 'clean', 'V01');
+    expect(interrupted.code).toBe(2);
+    expect(interrupted.err).toContain('同じ clean コマンドを再実行すると、記録から途中の続きを再開します');
+    const progressPath = path.join(path.dirname(paths.state), '..', 'clean-V01.json');
+    const interruptedProgress = JSON.parse(fs.readFileSync(progressPath, 'utf8'));
+    expect(interruptedProgress.removed).toEqual(['.gitattributes']);
+    expect(interruptedProgress.pending).toBe('.gitignore');
+    expect(fs.existsSync(target)).toBe(false);
     failure.mockRestore();
     write(root, '.gitattributes', '*.js text eol=lf\n');
     expect((await command(root, 'clean', 'V01')).code).toBe(0);
     expect(fs.existsSync(paths.worktree)).toBe(false);
+    const resumedProgress = JSON.parse(fs.readFileSync(progressPath, 'utf8'));
+    expect(resumedProgress.removed).toHaveLength(5);
+    expect(resumedProgress.pending).toBeNull();
+  });
+  test('最後の記録の書き出しで止まっても再実行で処理中のパスを削除済みにする', async () => {
+    const { root, paths } = await fixture();
+    const progressPath = path.resolve(path.dirname(paths.state), '..', 'clean-V01.json');
+    const original = fs.renameSync;
+    let writes = 0;
+    const failure = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (path.resolve(to) === progressPath && ++writes === 6) throw new Error('書き出しの中断');
+      original(from, to);
+    });
+    expect((await command(root, 'clean', 'V01')).code).toBe(2);
+    failure.mockRestore();
+    expect(JSON.parse(fs.readFileSync(progressPath, 'utf8')).pending).not.toBeNull();
+
+    expect((await command(root, 'clean', 'V01')).code).toBe(0);
+    const progress = JSON.parse(fs.readFileSync(progressPath, 'utf8'));
+    expect(progress.removed).toHaveLength(5);
+    expect(progress.pending).toBeNull();
   });
   test('runで作り直した束は過去の削除記録を使わない', async () => {
     const { root, paths } = await fixture({ applied: false });

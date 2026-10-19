@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { ensureManagedPath } from '../paths.js';
+import { renameWithRetry } from '../fs-retry.js';
 import { readHashList, sha256, validateHashList } from '../snapshot/hash-list.js';
 
 export function writeManagedFile(repoRoot, filePath, content) {
@@ -11,7 +12,7 @@ export function writeManagedFile(repoRoot, filePath, content) {
   try {
     fs.writeFileSync(temporary, content, { flag: 'wx' });
     ensureManagedPath(repoRoot, filePath);
-    fs.renameSync(temporary, filePath);
+    renameWithRetry(temporary, filePath);
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }
