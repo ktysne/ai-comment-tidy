@@ -15,11 +15,11 @@ function consume(counts, item) {
 
 // 規則の根拠が増えたブロックの添字を返す。
 // 対応するブロックの根拠を先に消し込み、残りを、ファイル内で消し込まれずに余った元の根拠で消し込む。
+// 報告しないブロック(先頭の当たりが allow のもの)も消し込みには加える。元の根拠が余って別の追加を打ち消さないため。
 function blocksWithNewEvidence(ruleId, current, baseline, pairing) {
   const leftovers = baseline.blocks.map((block) => countOf(block.evidence[ruleId] ?? []));
   const remaining = new Map();
   for (const [index, block] of current.blocks.entries()) {
-    if (!block.reported[ruleId]) continue;
     const paired = pairing[index] >= 0 ? leftovers[pairing[index]] : null;
     remaining.set(index, (block.evidence[ruleId] ?? []).filter((item) => !(paired && consume(paired, item))));
   }
@@ -30,7 +30,8 @@ function blocksWithNewEvidence(ruleId, current, baseline, pairing) {
   }
   const added = new Set();
   for (const [index, evidence] of remaining) {
-    if (evidence.filter((item) => !consume(pool, item)).length > 0) added.add(index);
+    const unmatched = evidence.filter((item) => !consume(pool, item));
+    if (unmatched.length > 0 && current.blocks[index].reported[ruleId]) added.add(index);
   }
   return added;
 }

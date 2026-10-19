@@ -181,6 +181,23 @@ describe('新しい違反の絞り込み', () => {
     expect(ruleIds(before, lines('// 説明 #300 と #301', 'function a() {}'), options)).toEqual(['issue-ref']);
   });
 
+  test('先頭の当たりが allow のブロックの根拠も、同じ番号の追加を打ち消さない', () => {
+    const options = { allow: [{ pattern: '#333', reason: '試験' }] };
+    const before = lines('// #333 と #259', 'function a() {}');
+    const after = lines('// #333 と #259', 'function a() {}', '// #259', 'function b() {}');
+    expect(added(before, after, options)).toEqual([{ ruleId: 'issue-ref', startLine: 3 }]);
+  });
+
+  test('本文が同じで行数の違うブロックを関数ごと並べ替えても length を報告しない', () => {
+    // 空白を除いた本文が同じになるよう、同じ文を 4、5、6 行に折り返す。
+    const wrap = (count) => Array.from({ length: count }, (_, index) => `// ${'あいうえおかきくけこさしすせそたちつてと'.slice(index * 20 / count, (index + 1) * 20 / count)}`);
+    const block = (count, name) => [...wrap(count), `function ${name}() {}`];
+    const before = lines(...block(4, 'a'), ...block(5, 'b'), ...block(6, 'c'));
+    const after = lines(...block(6, 'c'), ...block(5, 'b'), ...block(4, 'a'));
+    expect(analyzeComments('file.js', after).violations.map(({ ruleId }) => ruleId)).toEqual(['length', 'length', 'length']);
+    expect(added(before, after)).toEqual([]);
+  });
+
   test('指定した行範囲に重なる違反だけを返す', () => {
     const violation = (startLine, endLine = startLine) => ({ startLine, endLine });
     const current = [violation(1, 2), violation(3, 5), violation(6, 8)];

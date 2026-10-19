@@ -144,7 +144,8 @@ export function correspondBlocks(baseBlocks, currentBlocks) {
 
   for (const { bases, currents } of groupByText(baseBlocks, currentBlocks)) {
     if (bases.length === 0 || currents.length === 0) continue;
-    for (const [baseIndex, currentIndex] of alignByAnchor(bases, currents, baseBlocks, currentBlocks)) {
+    // 本文が同じ組は順序を問わずアンカーで対応させる。並べ替えたブロックを順序の制約で取り違えないため。
+    for (const [baseIndex, currentIndex] of alignByOrder(bases, currents, baseBlocks, currentBlocks)) {
       link(baseIndex, currentIndex);
     }
     const restBases = bases.filter((index) => !baseTaken[index]);
