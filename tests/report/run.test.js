@@ -37,6 +37,21 @@ describe('最終報告の解析', () => {
     const text = `codex-agent: agent=impl-standard\ncodex-agent: run=run-1\n## 見つけた未対応の問題\nなし。\n\n${JSON.stringify(value, null, 2)}\ncodex-agent: result=ok\n`;
     expect(parseReport(text, options())).toEqual({ report: value, notes: [] });
   });
+  test('コードフェンスの無いJSONを、次の節の見出しの直前でも読む', () => {
+    const value = { ...empty, needsDecision: [candidate] };
+    const text = `codex-agent: agent=impl-standard\ncodex-agent: run=run-1\n## やったこと\n変更した。\n\n${JSON.stringify(value, null, 2)}\n\n## 見つけた未対応の問題\nなし。\ncodex-agent: result=ok\n`;
+    expect(parseReport(text, options())).toEqual({ report: value, notes: [] });
+  });
+  test('閉じたコードフェンスの中の見出しを、節の終わりとして扱わない', () => {
+    const json = JSON.stringify({ ...empty, needsDecision: [candidate] }, null, 2);
+    const text = `codex-agent: agent=impl-standard\ncodex-agent: run=run-1\n例:\n\`\`\`text\n${json}\n## 見出しの例\n\`\`\`\n本文\ncodex-agent: result=ok\n`;
+    expect(parseReport(text, options())).toEqual({ report: null, notes: ['報告の JSON なし'] });
+  });
+  test('報告の末尾と節の終わりの両方に裸のJSONがあれば、末尾を読む', () => {
+    const value = { ...empty, needsDecision: [candidate] };
+    const text = `codex-agent: agent=impl-standard\ncodex-agent: run=run-1\n## やったこと\n${JSON.stringify(empty, null, 2)}\n## 見つけた未対応の問題\n${JSON.stringify(value, null, 2)}\ncodex-agent: result=ok\n`;
+    expect(parseReport(text, options()).report).toEqual(value);
+  });
   test('コードフェンスのJSONがあれば、末尾の裸のJSONより優先する', () => {
     const value = { ...empty, needsDecision: [candidate] };
     const text = report(empty).replace('codex-agent: result=ok\n', `${JSON.stringify(value, null, 2)}\ncodex-agent: result=ok\n`);
