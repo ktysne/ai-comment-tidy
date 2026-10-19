@@ -121,6 +121,30 @@ describe('run コマンド', { timeout: 20000 }, () => {
     expect(await run(offline, edited.io)).toBe(1);
     expect(edited.out.join('\n')).toContain('docs/plan.md [out-of-scope-change]');
   });
+  test('docs.root の外の資料もハッシュに載せ、offline の検査がパスを含む参照を照合し、資料の書き換えを止める', async () => {
+    const { root, definition, paths } = makeRepo();
+    write(root, '.comment-tidy/config.json', JSON.stringify({ rulesPaths: ['~/rules.md'], scope: { include: ['src/**'] },
+      docs: { root: 'docs', refPattern: '(?<doc>[\\w./-]+\\.md)「(?<heading>[^」]+)」' },
+      passes: { volume: { criteria: 'criteria-volume.md' } } }));
+    write(root, 'tools/policy.md', '# 方針\n## 制約\n');
+    write(root, 'src/a.cpp', '// 制約は tools/policy.md「制約」にある。\nint a;\n');
+    git(root, ['add', '--all']);
+    git(root, ['commit', '--quiet', '-m', '外の資料']);
+    const base = git(root, ['rev-parse', 'HEAD']);
+    write(root, '.comment-tidy/batches-volume.json', JSON.stringify({ ...definition, base }));
+    expect(await run(['run', 'V01', '--repo', root], capture().io)).toBe(0);
+    expect(Object.keys(readHashList(paths.hashes).files)).toContain('tools/policy.md');
+    const offline = ['check', '--offline', '--repo', paths.worktree, '--base-dir', paths.baseline, '--hashes', paths.hashes,
+      '--config', path.join(root, '.comment-tidy/config.json'), '--files', 'src/a.cpp'];
+    write(paths.worktree, 'src/a.cpp', '// 制約は tools/policy.md「制約」を参照する。\r\nint a;\r\n');
+    const clean = capture();
+    expect(await run(offline, clean.io)).toBe(0);
+    expect(clean.out.join('\n')).not.toContain('doc-ref');
+    write(paths.worktree, 'tools/policy.md', '# 方針\n## 制約の変更\n');
+    const edited = capture();
+    expect(await run(offline, edited.io)).toBe(1);
+    expect(edited.out.join('\n')).toContain('tools/policy.md [out-of-scope-change]');
+  });
   test('再開は担当の変更を案内し、基準と状態を上書きしない', async () => {
     const { root, paths } = makeRepo();
     expect(await run(['run', 'V01', '--repo', root], capture().io)).toBe(0);

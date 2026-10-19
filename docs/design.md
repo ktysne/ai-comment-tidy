@@ -454,7 +454,7 @@ eslint の `no-restricted-imports` で、`src/check/` と `src/snapshot/fs.js` �
 `run` は束ごとに次を行う。
 
 1. 基準コミットから束の作業ツリーを `.comment-tidy/worktrees/<回>/<束>` に作る。既にあれば再開として扱う。`--fresh` なら、途中の変更を捨てて作り直す。
-2. 作ったばかりの作業ツリーから、担当ファイルの写しを `.comment-tidy/work/<回>/base/<束>/` に書き出す。あわせて、対象の範囲の全ファイルと `docs.root` の下の Markdown の資料のハッシュの一覧を書く。資料を含めるのは、`check --offline` が資料の一覧をハッシュの一覧から得て参照を照合し、資料の書き換えを担当外の変更として止めるためである。
+2. 作ったばかりの作業ツリーから、担当ファイルの写しを `.comment-tidy/work/<回>/base/<束>/` に書き出す。あわせて、対象の範囲の全ファイルと、リポジトリ内の Markdown の資料のハッシュの一覧を書く。`docs.root` の外の Markdown も含めるのは、パスを含む参照がそれを指せるためである。資料を含めるのは、`check --offline` が資料の一覧をハッシュの一覧から得て参照を照合し、資料の書き換えを担当外の変更として止めるためである。
 3. 依頼文を作り、`.comment-tidy/work/<回>/prompts/<束>.md` に書く。
 4. `.comment-tidy/work/<回>/state/<束>.json` に「用意済み」と時刻を書いて戻る。
 
