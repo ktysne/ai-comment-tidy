@@ -137,6 +137,26 @@ describe('検査済みの束の取り込み', { timeout: 20000 }, () => {
     expect(readState(root, 'volume', 'V01').status).toBe('checked');
     expect(fs.existsSync(paths.state)).toBe(true);
   });
+  test('基準より後の担当の重ならないコミットは束の変更と統合する', async () => {
+    const { root } = await makeRepo();
+    write(root, 'src/a.cpp', '// 一\r\n// 二\r\n// 三\r\n// 四\r\nint a;\r\n\r\nint added;\r\n');
+    git(root, ['add', 'src/a.cpp']);
+    git(root, ['commit', '--quiet', '-m', '担当の重ならない変更']);
+    const result = capture();
+    expect(await run(['apply', 'V01', '--repo', root], result.io)).toBe(0);
+    expect(fs.readFileSync(path.join(root, 'src/a.cpp'), 'utf8')).toBe('// 一\r\nint a;\r\n\r\nint added;\r\n');
+    expect(result.out[0]).toContain('統合した担当ファイル: src/a.cpp');
+    expect(readState(root, 'volume', 'V01').status).toBe('applied');
+  });
+  test('基準より後に担当のモードが変わったコミットを拒否する', async () => {
+    const { root } = await makeRepo();
+    git(root, ['update-index', '--chmod=+x', 'src/a.cpp']);
+    git(root, ['commit', '--quiet', '-m', 'モードの変更']);
+    const before = fs.readFileSync(path.join(root, 'src/a.cpp'));
+    expect(await run(['apply', 'V01', '--repo', root], capture().io)).toBe(2);
+    expect(fs.readFileSync(path.join(root, 'src/a.cpp'))).toEqual(before);
+    expect(readState(root, 'volume', 'V01').status).toBe('checked');
+  });
   test('基準より後の担当外のコミットを許し外部設定と回を受ける', async () => {
     const { root } = await makeRepo();
     write(root, 'src/b.cpp', 'int later;\r\n');

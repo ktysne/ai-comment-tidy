@@ -4,7 +4,7 @@ import path from 'node:path';
 import { selectBatch } from '../batches.js';
 import { loadConfig } from '../config.js';
 import { assertSafeAssignedPath, batchPaths, ensureManagedPath, validateName } from '../paths.js';
-import { changedAssignedFiles, createGitSnapshot, repositoryRoot } from '../snapshot/git.js';
+import { changedAssignedFiles, createGitSnapshot, mergeFileContents, repositoryRoot } from '../snapshot/git.js';
 import { validateBatchWorktree } from '../snapshot/worktree.js';
 import { readState, transitionState, writeState } from '../state.js';
 import { runCheck } from '../check/run.js';
@@ -35,6 +35,16 @@ function parseArgs(argv) {
 
 function git(root, args) {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+}
+
+function fileModes(root, ref, files) {
+  const output = git(root, ['ls-tree', '-z', ref, '--', ...files.map((file) => `:(literal)${file}`)]);
+  const modes = new Map();
+  for (const entry of output.split('\0').filter(Boolean)) {
+    const separator = entry.indexOf('\t');
+    modes.set(entry.slice(separator + 1), entry.slice(0, separator).split(' ')[0]);
+  }
+  return modes;
 }
 
 function regularTarget(root, file) {
@@ -69,13 +79,17 @@ export function runApplyCommand(argv, io) {
   const baseRaw = base.readManyRaw(batch.files);
   const headRaw = head.readManyRaw(batch.files);
   const baseContents = base.readMany(batch.files);
-  git(repoRoot, ['diff', '--quiet', definition.base, 'HEAD', '--', ...batch.files.map((file) => `:(literal)${file}`)]);
+  const headContents = head.readMany(batch.files);
+  const baseModes = fileModes(repoRoot, definition.base, batch.files);
+  const headModes = fileModes(repoRoot, 'HEAD', batch.files);
+  const mergeTargets = [];
   for (const file of batch.files) {
-    if (!baseRaw.get(file).equals(headRaw.get(file))) throw new Error(`統合先の HEAD が基準から変わっています: ${file}`);
+    if (baseModes.get(file) !== headModes.get(file)) throw new Error(`統合先の HEAD で担当ファイルのモードが基準から変わっています: ${file}`);
+    if (!baseRaw.get(file).equals(headRaw.get(file))) mergeTargets.push(file);
     const destination = regularTarget(repoRoot, file);
     original.set(file, fs.readFileSync(destination));
-    if (!original.get(file).equals(baseContents.get(file)) && !original.get(file).equals(baseRaw.get(file))) {
-      throw new Error(`統合先の担当ファイルが基準から変わっています: ${file}`);
+    if (!original.get(file).equals(headContents.get(file)) && !original.get(file).equals(headRaw.get(file))) {
+      throw new Error(`統合先の担当ファイルが HEAD から変わっています: ${file}`);
     }
   }
   if (changedAssignedFiles(repoRoot, batch.files).size) throw new Error('統合先の担当ファイルに未コミットの変更があります');
@@ -92,6 +106,13 @@ export function runApplyCommand(argv, io) {
   if (!result.ok) {
     io.stdout(formatSummary(result));
     return 1;
+  }
+  // 基準より後に HEAD へ入った変更(別の束や設定のコミット)を消さないよう、束の差分を重ねる。
+  // 重ねた結果は再検査しない。検査の対象は束の差分で、HEAD 側の変更はそのコミットの責任である。
+  for (const file of mergeTargets) {
+    const merged = mergeFileContents(baseContents.get(file), contents.get(file), headContents.get(file));
+    if (merged === null) throw new Error(`統合先の HEAD の変更と束の変更が衝突します: ${file}`);
+    contents.set(file, merged);
   }
   const written = [];
   try {
@@ -111,6 +132,7 @@ export function runApplyCommand(argv, io) {
     if (failures.length) throw new Error(`${error.message}; 復元できない担当ファイルがあります: ${failures.join(', ')}`, { cause: error });
     throw error;
   }
-  io.stdout(`${batch.id}: 取り込み済み\n統合先: ${branch}\n担当ファイルを確認してコミットしてください`);
+  const mergedNote = mergeTargets.length ? `\n基準より後の HEAD の変更と統合した担当ファイル: ${mergeTargets.join(', ')}` : '';
+  io.stdout(`${batch.id}: 取り込み済み\n統合先: ${branch}${mergedNote}\n担当ファイルを確認してコミットしてください`);
   return 0;
 }
