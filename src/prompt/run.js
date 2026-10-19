@@ -61,7 +61,7 @@ export function generatePrompt({ batch, paths, criteria, criteriaPath, rulesPath
     '## 報告',
     '「あなたの判断が必要なこと」「やったこと」「見つけた未対応の問題」の3つの見出しで報告する。',
     '「やったこと」の最後に、次の形の JSON を1つ置く。候補が無ければ空の配列とする。',
-    'lines は基準の行番号で書く。各候補は file、lines、summary を持つ。',
+    'lines は基準の行番号を、"12" か "12-15" の形の文字列で書く。各候補は file、lines、summary を持つ。',
     '```json', JSON.stringify({ docsCandidates: [], needsDecision: [], codeImprovements: [] }, null, 2), '```', '',
   ].join('\n');
 }
