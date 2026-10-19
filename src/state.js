@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { batchPaths, ensureManagedPath, validateName } from './paths.js';
+import { renameWithRetry } from './fs-retry.js';
 
 export const STATUS_LABELS = Object.freeze({
   prepared: '用意済み', delegated: '委譲中', reported: '報告あり', checked: '検査済み', applied: '取り込み済み',
@@ -95,7 +96,7 @@ export function writeState(repoRoot, pass, batch, state) {
   try {
     fs.writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
     ensureManagedPath(repoRoot, filePath);
-    fs.renameSync(temporary, filePath);
+    renameWithRetry(temporary, filePath);
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }

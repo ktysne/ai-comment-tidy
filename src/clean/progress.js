@@ -44,5 +44,12 @@ export function recordRemoval(repoRoot, job, file, remove) {
   remove();
   if (!progress.removed.includes(file)) progress.removed.push(file);
   progress.pending = null;
+}
+
+export function flushProgress(repoRoot, job) {
+  const progress = job.progress;
+  if (progress.pending && !fileStatus(path.join(job.paths.worktree, progress.pending))
+    && !progress.removed.includes(progress.pending)) progress.removed.push(progress.pending);
+  progress.pending = null;
   writeManagedFile(repoRoot, progressPath(job.paths), `${JSON.stringify(progress, null, 2)}\n`);
 }

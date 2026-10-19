@@ -6,7 +6,7 @@ import { repositoryRoot } from '../snapshot/git.js';
 import { listWorktreeRegistrations, removeBatchWorktree } from '../snapshot/worktree.js';
 import { readState, statusLabel } from '../state.js';
 import { inspectCandidate } from './inspect.js';
-import { createProgress, readProgress, recordRemoval } from './progress.js';
+import { createProgress, flushProgress, readProgress, recordRemoval } from './progress.js';
 import { fileStatus, inspectTree, removeEmptyDirectories, removeEmptyRoot, unlinkTreeEntry } from './tree.js';
 
 function parseArgs(argv) {
@@ -60,6 +60,7 @@ function removeJob(repoRoot, job) {
   for (const link of job.tree.links) recordRemoval(repoRoot, job, link, () => unlinkTreeEntry(repoRoot, directory, link, true));
   if (inspectTree(directory).links.length) throw new Error('解除していないリンクが残っています');
   for (const file of job.tree.files.filter((file) => file !== '.git')) recordRemoval(repoRoot, job, file, () => unlinkTreeEntry(repoRoot, directory, file, false));
+  flushProgress(repoRoot, job);
   removeEmptyDirectories(repoRoot, directory, inspectTree(directory));
   const remaining = inspectTree(directory);
   if (remaining.links.length || remaining.files.some((file) => file !== '.git')) throw new Error(`通常ファイルやリンクが残っています: ${directory}`);
@@ -122,6 +123,7 @@ export function runCleanCommand(argv, io) {
     } catch (error) {
       io.stderr(`${job.batch.id}: 失敗: ${error.message}\n残ったパスを確認: ${job.paths.worktree}`);
       io.stderr(`削除済み: ${jobs.slice(0, index).map((item) => item.batch.id).join(', ') || 'なし'}\n未処理: ${jobs.slice(index + 1).map((item) => item.batch.id).join(', ') || 'なし'}`);
+      io.stderr('同じ clean コマンドを再実行すると、記録から途中の続きを再開します。');
       return 2;
     }
   }
