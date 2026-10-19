@@ -78,13 +78,13 @@ const SECTION_NUMBER_PATTERN = /^§?\s*(\d+(?:\.\d+)*)$/;
 
 // 節番号は区切りまで一致させる。前方一致のままだと §3 が 3.1 や 30 の節に当たるため。
 function headingMatcher(heading) {
-  const section = SECTION_NUMBER_PATTERN.exec(heading.trim());
+  const expected = withoutParentheticalSupplement(heading);
+  const section = SECTION_NUMBER_PATTERN.exec(expected);
   if (section) {
     const number = section[1].replace(/\./g, '\\.');
     const pattern = new RegExp(`^§?\\s*${number}(?:\\.(?!\\d)|\\s|$)`);
-    return (actual) => pattern.test(actual.trim());
+    return (actual) => pattern.test(withoutParentheticalSupplement(actual));
   }
-  const expected = withoutParentheticalSupplement(heading);
   return (actual) => withoutParentheticalSupplement(actual).startsWith(expected);
 }
 

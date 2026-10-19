@@ -42,6 +42,15 @@ describe('資料の参照の照合', () => {
       .toBe(false);
   });
 
+  test('節番号の照合でも、両側の括弧書きを除いてから比べる', () => {
+    const read = () => '## 3（補足）\n## 30. 付録\n';
+    const check = (heading) => docReferenceExists({ doc: 'plan.md', heading, docsRoot: 'docs', files: ['docs/plan.md'], read });
+    expect(check('3')).toBe(true);
+    expect(check('§3（補足）')).toBe(true);
+    expect(docReferenceExists({ doc: 'plan.md', heading: '3（補足）', docsRoot: 'docs', files: ['docs/plan.md'], read: () => '## 30. 付録\n' }))
+      .toBe(false);
+  });
+
   test('節番号でない見出しは、括弧書きを除いた前方一致で照合する', () => {
     expect(exists('参照実装とのクロスチェック')).toBe(true);
     expect(exists('設計')).toBe(false);
