@@ -21,14 +21,36 @@ function lastJsonBlock(body) {
     contents = [];
   }
   if (fence?.json) throw new Error('報告の最後の JSON ブロックが閉じられていません');
-  // 閉じていない非 JSON フェンスの中身はコード例なので、末尾の裸の JSON としても読まない。
-  return last ?? (fence === null ? trailingBareJson(body) : null);
+  return last ?? trailingBareJson(body);
 }
 
-// コードフェンスを付けずに末尾へ置かれた JSON を拾う。本文中のコード例を取り違えないよう、末尾に限る。
+// コードフェンスを付けずに置かれた JSON を拾う。本文中のコード例を取り違えないよう、報告の末尾か
+// 節の終わり(フェンスの外の `## ` 見出しの直前)に限り、後ろの位置から順に試す。
 function trailingBareJson(body) {
   const lines = body.split(/\r?\n/u);
-  let end = lines.length - 1;
+  const limits = [];
+  let fence = null;
+  lines.forEach((line, index) => {
+    if (fence !== null) {
+      const closing = /^ {0,3}(`+|~+)\s*$/u.exec(line);
+      if (closing && closing[1][0] === fence[0] && closing[1].length >= fence.length) fence = null;
+      return;
+    }
+    const opening = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/u.exec(line);
+    if (opening && !(opening[1][0] === '`' && opening[2].includes('`'))) fence = opening[1];
+    else if (/^## /u.test(line)) limits.push(index);
+  });
+  // 閉じていない非 JSON フェンスの中身はコード例なので、報告の末尾の裸の JSON としては読まない。
+  if (fence === null) limits.push(lines.length);
+  for (const limit of limits.reverse()) {
+    const text = bareJsonBefore(lines, limit);
+    if (text !== null) return text;
+  }
+  return null;
+}
+
+function bareJsonBefore(lines, limit) {
+  let end = limit - 1;
   while (end >= 0 && (lines[end].trim() === '' || lines[end].startsWith('codex-agent:'))) end--;
   if (end < 0 || lines[end].trim() !== '}') return null;
   for (let start = end - 1; start >= 0; start--) {
