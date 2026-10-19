@@ -44,13 +44,20 @@ function trailingBareJson(body) {
   return null;
 }
 
+// 実行者は行番号を [開始, 終了] の配列で書くことがあるので、文字列の形へ揃える。
+function linesText(lines) {
+  if (!Array.isArray(lines) || lines.length < 1 || lines.length > 2 || !lines.every((line) => Number.isSafeInteger(line))) return lines;
+  return lines.length === 2 && lines[0] !== lines[1] ? `${lines[0]}-${lines[1]}` : String(lines[0]);
+}
+
 function candidateReport(value, batch, baseline) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('報告の JSON は候補の配列を持つオブジェクトが必要です');
   const selected = new Set(batch.files);
   const report = {};
   for (const key of CANDIDATE_KEYS) {
     if (!Array.isArray(value[key])) throw new Error(`報告の ${key} は配列が必要です`);
-    report[key] = value[key].map((entry) => {
+    report[key] = value[key].map((raw) => {
+      const entry = raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...raw, lines: linesText(raw.lines) } : raw;
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)
         || typeof entry.lines !== 'string' || !/^[1-9]\d*(?:-[1-9]\d*)?$/u.test(entry.lines)
         || typeof entry.summary !== 'string' || !entry.summary.trim()) throw new Error(`報告の ${key} の候補の形が不正です`);

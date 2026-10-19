@@ -42,6 +42,15 @@ describe('最終報告の解析', () => {
     const text = report(empty).replace('codex-agent: result=ok\n', `${JSON.stringify(value, null, 2)}\ncodex-agent: result=ok\n`);
     expect(parseReport(text, options()).report).toEqual(empty);
   });
+  test('行番号の配列を、文字列の行番号と範囲へ揃える', () => {
+    const value = { ...empty, docsCandidates: [{ ...candidate, lines: [1, 3] }], needsDecision: [{ ...candidate, lines: [2] }], codeImprovements: [{ ...candidate, lines: [2, 2] }] };
+    expect(parseReport(report(value), options()).report).toEqual({
+      docsCandidates: [{ ...candidate, lines: '1-3' }], needsDecision: [{ ...candidate, lines: '2' }], codeImprovements: [{ ...candidate, lines: '2' }],
+    });
+    for (const lines of [[3, 1], [0, 2], [1, 2, 3], [], [1.5]]) {
+      expect(() => parseReport(report({ ...empty, needsDecision: [{ ...candidate, lines }] }), options())).toThrow();
+    }
+  });
   test('閉じていない非JSONのコードフェンスの中のJSONを、末尾の裸のJSONとして読まない', () => {
     const json = JSON.stringify({ ...empty, needsDecision: [candidate] }, null, 2);
     for (const opening of ['~~~text', '```']) {
