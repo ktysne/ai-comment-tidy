@@ -6,11 +6,11 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 vi.mock('../../src/lint/rules.js', async (importOriginal) => {
   const rules = await importOriginal();
-  return { ...rules, findViolations: vi.fn(rules.findViolations) };
+  return { ...rules, analyzeComments: vi.fn(rules.analyzeComments) };
 });
 
 import { lintRepository } from '../../src/lint/run.js';
-import { findViolations } from '../../src/lint/rules.js';
+import { analyzeComments } from '../../src/lint/rules.js';
 
 const roots = [];
 
@@ -109,13 +109,13 @@ describe('lintRepository', () => {
     write(root, 'folder/changed.cpp', '// safe\n');
     commitAll(root);
     write(root, 'folder/changed.cpp', '// #73\n');
-    findViolations.mockClear();
+    analyzeComments.mockClear();
 
     const result = lintRepository({ repoRoot: root, mode: 'changed', pathspecs: ['folder'] });
 
     expect(result.files.map(({ path: filePath }) => filePath)).toEqual(['folder/changed.cpp']);
     expect(result.confirmed).toBe(1);
-    expect(findViolations).toHaveBeenCalledTimes(2);
+    expect(analyzeComments).toHaveBeenCalledTimes(2);
   });
 
   test('staged はインデックスの内容を読み、作業ツリーの未登録変更を読まない', () => {
@@ -224,6 +224,38 @@ describe('lintRepository', () => {
     const result = lintRepository({ repoRoot: root, mode: 'staged' });
     expect(result.confirmed).toBe(1);
     expect(result.files[0].violations.map(({ matched }) => matched)).toEqual(['#2']);
+  });
+
+  test('staged で、既存の長いコメントから経緯の 1 文だけを削っても既存の違反を報告しない', () => {
+    const root = makeRepo();
+    const header = ['// 一行目の説明。', '// 二行目の説明 #259。', '// 三行目の説明。'];
+    write(root, 'src/long.cpp', [...header, '// 以前はこうだったという経緯。', '// 五行目の説明。', 'int value = 1;', ''].join('\n'));
+    commitAll(root);
+    write(root, 'src/long.cpp', [...header, '// 五行目の説明。', 'int value = 1;', ''].join('\n'));
+    execFileSync('git', ['-C', root, 'add', '--', 'src/long.cpp']);
+
+    expect(lintRepository({ repoRoot: root, mode: 'staged' })).toEqual({ files: [], confirmed: 0, review: 0 });
+  });
+
+  test('staged で、既存のコメントの行数を増やすと length を報告する', () => {
+    const root = makeRepo();
+    write(root, 'src/long.cpp', '// 一\n// 二\n// 三\n// 四\nint value = 1;\n');
+    commitAll(root);
+    write(root, 'src/long.cpp', '// 一\n// 二\n// 三\n// 四\n// 五\nint value = 1;\n');
+    execFileSync('git', ['-C', root, 'add', '--', 'src/long.cpp']);
+
+    const result = lintRepository({ repoRoot: root, mode: 'staged' });
+    expect(result.files[0].violations.map(({ ruleId }) => ruleId)).toEqual(['length']);
+  });
+
+  test('ステージしていない名前の変更で書き換えたコメントも、消えたファイルのブロックと対応付ける', () => {
+    const root = makeRepo();
+    write(root, 'old.cpp', '// 一\n// 二 #259\n// 三\n// 四\n// 五\nint value = 1;\n');
+    commitAll(root);
+    fs.rmSync(path.join(root, 'old.cpp'));
+    write(root, 'new.cpp', '// 一\n// 二 #259\n// 三\n// 五\nint value = 1;\n');
+
+    expect(lintRepository({ repoRoot: root, mode: 'changed' })).toEqual({ files: [], confirmed: 0, review: 0 });
   });
 
   test('scope.exclude のフォルダーに当たるパターンは、その下のファイルにも当たる', () => {
