@@ -158,6 +158,22 @@ describe('検査済みの束の取り込み', { timeout: 20000 }, () => {
     expect(await run(['apply', 'V01', '--repo', root], capture().io)).toBe(0);
     expect(fs.readFileSync(path.join(root, 'src/a.cpp'), 'utf8')).toBe('// 一\r\nint a;\r\n\r\nint added;\r\n');
   });
+  test('HEADにUTF-8でないバイトがあれば統合せず拒否する', async () => {
+    const { root } = await makeRepo();
+    const head = Buffer.concat([
+      Buffer.from('// 一\r\n// 二\r\n// 三\r\n// 四\r\nint a;\r\n\r\nconst char* s = "', 'utf8'),
+      Buffer.from([0x82, 0xa0]),
+      Buffer.from('";\r\n', 'utf8'),
+    ]);
+    fs.writeFileSync(path.join(root, 'src/a.cpp'), head);
+    git(root, ['add', 'src/a.cpp']);
+    git(root, ['commit', '--quiet', '-m', 'CP932 の文字列']);
+    const before = fs.readFileSync(path.join(root, 'src/a.cpp'));
+    const result = capture();
+    expect(await run(['apply', 'V01', '--repo', root], result.io)).toBe(2);
+    expect(result.err.join('\n')).toContain('UTF-8 として読めません');
+    expect(fs.readFileSync(path.join(root, 'src/a.cpp'))).toEqual(before);
+  });
   test('統合でHEADのコメント以外が変わるなら拒否する', async () => {
     const { root } = await makeRepo();
     write(root, 'src/a.cpp', 'auto s = R"x(\r\n// 一\r\n// 二\r\n// 三\r\n// 四\r\nint a;\r\n)x";\r\n');

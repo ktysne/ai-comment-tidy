@@ -48,21 +48,30 @@ function fileModes(root, ref, files) {
   return modes;
 }
 
-function decodeText(buffer) {
-  const text = buffer.toString('utf8');
-  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+// 置換文字へ黙って読み替えると、HEAD の UTF-8 でないバイトを壊して書き戻すため、厳格に読む。
+function strictText(buffer, file) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buffer);
+  } catch (error) {
+    throw new Error(`統合する担当ファイルを UTF-8 として読めません: ${file}`, { cause: error });
+  }
+}
+
+function codeOf(buffer, file, config) {
+  const text = strictText(buffer, file);
+  return normalizedCode(file, text.charCodeAt(0) === 0xfeff ? text.slice(1) : text, config);
 }
 
 // 検査は束の LF と CRLF の差を許すので、行末が揃った HEAD では LF で統合して HEAD の行末へ戻す。
 // 行末が混在する HEAD は、行ごとの行末を保てないためバイト列のまま統合する。
-function mergeAssignedFile(base, bundle, head) {
-  const headText = head.toString('utf8');
+function mergeAssignedFile(base, bundle, head, file) {
+  const [baseText, bundleText, headText] = [base, bundle, head].map((buffer) => strictText(buffer, file));
   const crlf = headText.includes('\r\n');
   if (crlf && /(^|[^\r])\n/u.test(headText)) return mergeFileContents(base, bundle, head);
-  const toLf = (buffer) => Buffer.from(buffer.toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
-  const merged = mergeFileContents(toLf(base), toLf(bundle), toLf(head));
+  const toLf = (text) => Buffer.from(text.replace(/\r\n/g, '\n'), 'utf8');
+  const merged = mergeFileContents(toLf(baseText), toLf(bundleText), toLf(headText));
   if (merged === null || !crlf) return merged;
-  return Buffer.from(merged.toString('utf8').replace(/\n/g, '\r\n'), 'utf8');
+  return Buffer.from(strictText(merged, file).replace(/\n/g, '\r\n'), 'utf8');
 }
 
 function regularTarget(root, file) {
@@ -128,9 +137,9 @@ export function runApplyCommand(argv, io) {
   // 基準より後に HEAD へ入った変更(別の束や設定のコミット)を消さないよう、束の差分を重ねる。
   // コメントの規則は再検査しない。HEAD 側のコメントはそのコミットの責任で、ここではコードの同一性だけを守る。
   for (const file of mergeTargets) {
-    const merged = mergeAssignedFile(baseContents.get(file), contents.get(file), headContents.get(file));
+    const merged = mergeAssignedFile(baseContents.get(file), contents.get(file), headContents.get(file), file);
     if (merged === null) throw new Error(`統合先の HEAD の変更と束の変更が衝突します: ${file}`);
-    if (normalizedCode(file, decodeText(merged), config) !== normalizedCode(file, decodeText(headContents.get(file)), config)) {
+    if (codeOf(merged, file, config) !== codeOf(headContents.get(file), file, config)) {
       throw new Error(`統合すると HEAD のコメント以外の部分が変わります: ${file}`);
     }
     contents.set(file, merged);
