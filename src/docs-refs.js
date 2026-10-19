@@ -74,9 +74,22 @@ export function resolveDocPaths(doc, docsRoot, files) {
   });
 }
 
+const SECTION_NUMBER_PATTERN = /^§?\s*(\d+(?:\.\d+)*)$/;
+
+// 節番号は区切りまで一致させる。前方一致のままだと §3 が 3.1 や 30 の節に当たるため。
+function headingMatcher(heading) {
+  const expected = withoutParentheticalSupplement(heading);
+  const section = SECTION_NUMBER_PATTERN.exec(expected);
+  if (section) {
+    const number = section[1].replace(/\./g, '\\.');
+    const pattern = new RegExp(`^§?\\s*${number}(?:\\.(?!\\d)|\\s|$)`);
+    return (actual) => pattern.test(withoutParentheticalSupplement(actual));
+  }
+  return (actual) => withoutParentheticalSupplement(actual).startsWith(expected);
+}
+
 export function docReferenceExists({ doc, heading, docsRoot, files, read }) {
   const candidates = resolveDocPaths(doc, docsRoot, files);
-  const expected = withoutParentheticalSupplement(heading);
-  return candidates.some((filePath) => markdownHeadings(read(filePath))
-    .some((actual) => withoutParentheticalSupplement(actual).startsWith(expected)));
+  const matches = headingMatcher(heading);
+  return candidates.some((filePath) => markdownHeadings(read(filePath)).some(matches));
 }
