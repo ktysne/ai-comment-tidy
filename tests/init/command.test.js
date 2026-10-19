@@ -186,6 +186,7 @@ describe('init', () => {
     expect(updatedGitignore.split(/\r?\n/u).filter((line) => /^\.comment-tidy\/work\/?$/u.test(line))).toHaveLength(1);
     expect(updatedGitignore).toContain('.comment-tidy/worktrees/');
     expect(result.out.join('\n')).toContain('criteria-history.md');
+    expect(result.out.join('\n')).toContain('.comment-tidy/work/ と .comment-tidy/worktrees/ をその道具の除外に足してください');
   });
 
   test('省略した回は volume を使う', async () => {
