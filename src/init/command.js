@@ -295,5 +295,7 @@ export function runInitCommand(argv, io) {
 
   commitGeneratedFiles(files, gitignorePath, gitignoreContent, updateGitignore, originalGitignore);
   io.stdout(`init: ${path.relative(repoRoot, configPath).replace(/\\/g, '/')}, .comment-tidy/criteria-${options.pass}.md${updateGitignore ? ', .gitignore' : ''}`);
+  // 束の作業ツリーはリポジトリの写しなので、.gitignore を見ない道具が走査すると写しの違反まで数える。
+  io.stdout(`注意: .gitignore を見ない道具(ESLint の flat config など)を使っているなら、${IGNORE_ENTRIES.join(' と ')} をその道具の除外に足してください`);
   return 0;
 }
