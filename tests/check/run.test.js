@@ -284,4 +284,22 @@ describe('check のコメント警告', () => {
 
     expect(result.warnings).toEqual([expect.objectContaining({ check: 'doc-ref', line: 2 })]);
   });
+
+  test('docs.root の外にあるパス参照の見出しを照合する', () => {
+    const pathConfig = {
+      docs: { root: 'documents', refPattern: '(?<doc>tools/ipad-debug/README\\.md)「(?<heading>[^」]+)」' },
+    };
+    const files = {
+      'src/a.cpp': 'int value;\n',
+      'documents/README.md': '# 別資料\n',
+      'tools/ipad-debug/README.md': '## §4.2 設定\n',
+    };
+    const result = check(
+      { ...files, 'src/a.cpp': 'int value;\n' },
+      { ...files, 'src/a.cpp': '// tools/ipad-debug/README.md「§4.2」\nint value;\n' },
+      { config: pathConfig },
+    );
+
+    expect(result.warnings.filter(({ check: name }) => name === 'doc-ref')).toEqual([]);
+  });
 });

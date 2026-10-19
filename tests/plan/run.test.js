@@ -84,6 +84,16 @@ describe('束の計画', () => {
     expect(result.definition.batches[0].docs).toEqual(['notes/05-architecture.md', 'notes/05-details.md']);
   });
 
+  test('パスを含む参照では docs.root の外にある資料も収集する', () => {
+    const result = plan([
+      ['src/a.cpp', '// tools/ipad-debug/README.md「§4.2」\n'],
+      ['documents/README.md', '# 別資料\n'],
+      ['tools/ipad-debug/README.md', '## §4.2 設定\n'],
+    ], { docs: { root: 'documents', refPattern: '(?<doc>tools/ipad-debug/README\\.md)「(?<heading>[^」]+)」' } });
+
+    expect(result.definition.batches[0].docs).toEqual(['tools/ipad-debug/README.md']);
+  });
+
   test('UTF-8で読めないファイルを束から除き、一覧で知らせる', () => {
     const result = plan([['src/b.cpp', Buffer.from([0xff])], ['src/a.cpp', oneWeightComment]]);
     expect(result.definition.batches[0].files).toEqual(['src/a.cpp']);

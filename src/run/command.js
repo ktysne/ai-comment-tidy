@@ -50,7 +50,8 @@ export function runRunCommand(argv, io) {
   const definition = selectBatchDefinition(repoRoot, options.pass);
   const baseline = createGitSnapshot(repoRoot, definition.base);
   // 資料も載せる。check --offline は資料の一覧をハッシュ一覧から得るため、scope の外の資料を落とすと参照を照合できない。
-  const hashedFile = (file) => isTargetFile(file, config) || isDocumentFile(file, config.docs.root);
+  // パスを含む参照は docs.root の外も指すため、リポジトリ内の Markdown をすべて載せる。
+  const hashedFile = (file) => isTargetFile(file, config) || isDocumentFile(file, '.');
   const scopeFiles = baseline.listFiles().filter(hashedFile);
   const jobs = options.batches.map((id) => {
     const batch = definition.batches.find((item) => item.id === id);
