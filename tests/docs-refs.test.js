@@ -56,4 +56,29 @@ describe('資料の参照の照合', () => {
     expect(exists('設計')).toBe(false);
     expect(exists('3. 設計')).toBe(true);
   });
+
+  test('パスを含む参照は docs.root の外にある完全一致の Markdown を照合する', () => {
+    const files = ['documents/README.md', 'tools/ipad-debug/README.md'];
+    const read = (filePath) => filePath === 'tools/ipad-debug/README.md' ? '## §4.2 設定\n' : '# 別資料\n';
+    expect(docReferenceExists({ doc: 'tools/ipad-debug/README.md', heading: '§4.2', docsRoot: 'documents', files, read }))
+      .toBe(true);
+  });
+
+  test('パスを含む参照は末尾が一致する Markdown を照合する', () => {
+    const files = ['documents/developer/md/deployment.md'];
+    expect(docReferenceExists({ doc: 'md/deployment.md', heading: '展開', docsRoot: 'documents', files,
+      read: () => '# 展開手順\n' })).toBe(true);
+  });
+
+  test('パスを含む参照は別ディレクトリの同名ファイルに当たらない', () => {
+    const files = ['documents/README.md', 'tools/other/README.md'];
+    expect(docReferenceExists({ doc: 'tools/ipad-debug/README.md', heading: '設定', docsRoot: 'documents', files,
+      read: () => '# 設定\n' })).toBe(false);
+  });
+
+  test('パスを含まない参照は docs.root 内のベース名の前方一致を保つ', () => {
+    const files = ['docs/plan-architecture.md', 'outside/plan-architecture.md'];
+    expect(docReferenceExists({ doc: 'plan', heading: '設計', docsRoot: 'docs', files,
+      read: () => '# 設計\n' })).toBe(true);
+  });
 });

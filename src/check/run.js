@@ -1,6 +1,6 @@
 import { commentBlocks } from '../comment-blocks.js';
 import { isTargetFile } from '../config.js';
-import { docReferenceExists, findDocReferences } from '../docs-refs.js';
+import { docReferenceExists, findDocReferences, resolveDocPaths } from '../docs-refs.js';
 import { languageFor } from '../lex/index.js';
 import { normalizedCode, normalizedCodeTokens } from '../lex/normalized-code.js';
 import { sha256 } from '../snapshot/hash-list.js';
@@ -147,7 +147,7 @@ function addCommentWarnings(filePath, source, linesToCheck, config, targetConten
           check: 'doc-ref',
           file: filePath,
           line: commentLine.line,
-          detail: `資料の参照 ${docsRoot}/${reference.doc}「${reference.heading}」に一致する見出しがありません`,
+          detail: `資料の参照 ${reference.doc.includes('/') ? reference.doc : `${docsRoot}/${reference.doc}`}「${reference.heading}」に一致する見出しがありません`,
         });
       }
     }
@@ -159,10 +159,10 @@ export function runCheck({ files, baseline, target, hashList = null, config, off
   const selectedFiles = [...new Set(files.map(normalizedPath))].sort();
   const failures = [];
   const warnings = [];
-  const targetPaths = new Set(target.listFiles().map(normalizedPath));
+  const targetPaths = [...new Set(target.listFiles().map(normalizedPath))];
   const docsRoot = config.docs.root.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '');
   const docsPrefix = docsRoot === '' || docsRoot === '.' ? '' : `${docsRoot}/`;
-  const documentPaths = [...targetPaths].filter((filePath) => !docsPrefix || filePath.startsWith(docsPrefix));
+  const documentPaths = targetPaths.filter((filePath) => !docsPrefix || filePath.startsWith(docsPrefix));
 
   for (const filePath of selectedFiles) {
     if (!languageFor(filePath, config)) throw new Error(`対応する言語がありません: ${filePath}`);
@@ -172,10 +172,35 @@ export function runCheck({ files, baseline, target, hashList = null, config, off
 
   const baselineReadPaths = selectedFiles.filter((filePath) => baseline.has(filePath));
   const targetReadPaths = offline
-    ? [...targetPaths]
+    ? targetPaths
     : [...new Set([...selectedFiles, ...documentPaths])].filter((filePath) => target.has(filePath));
   const baselineContents = baseline.readMany(baselineReadPaths);
   const targetContents = target.readMany(targetReadPaths);
+  const additionalDocumentPaths = new Set();
+  if (selectedFiles.some((filePath) => target.has(filePath))) {
+    for (const filePath of selectedFiles) {
+      if (!target.has(filePath)) continue;
+      const beforeSource = decodeSource(baselineContents.get(filePath), filePath);
+      const afterSource = decodeSource(targetContents.get(filePath), filePath);
+      const addedLines = addedCommentLines(
+        commentBlocks(filePath, beforeSource, config),
+        commentBlocks(filePath, afterSource, config),
+      );
+      for (const commentLine of addedLines) {
+        for (const reference of findDocReferences(commentLine.text, config.docs.refPattern)) {
+          if (!reference.doc.includes('/')) continue;
+          for (const documentPath of resolveDocPaths(reference.doc, docsRoot, targetPaths)) {
+            if (!documentPaths.includes(documentPath)) additionalDocumentPaths.add(documentPath);
+          }
+        }
+      }
+    }
+  }
+  const unreadAdditionalDocumentPaths = [...additionalDocumentPaths].filter((filePath) => !offline && target.has(filePath));
+  if (unreadAdditionalDocumentPaths.length > 0) {
+    for (const [filePath, contents] of target.readMany(unreadAdditionalDocumentPaths)) targetContents.set(filePath, contents);
+  }
+  documentPaths.push(...additionalDocumentPaths);
   const lineEndingMismatches = [];
 
   for (const filePath of selectedFiles) {

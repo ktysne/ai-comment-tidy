@@ -72,6 +72,14 @@ export function isDocumentFile(filePath, docsRoot) {
 }
 
 export function resolveDocPaths(doc, docsRoot, files) {
+  if (doc.includes('/')) {
+    return files.filter((filePath) => {
+      const normalizedPath = filePath.replace(/\\/g, '/');
+      return normalizedPath.toLowerCase().endsWith('.md')
+        && (normalizedPath === doc || normalizedPath.endsWith(`/${doc}`));
+    });
+  }
+
   return files.filter((filePath) => (
     isDocumentFile(filePath, docsRoot) && path.posix.basename(filePath.replace(/\\/g, '/')).startsWith(doc)
   ));

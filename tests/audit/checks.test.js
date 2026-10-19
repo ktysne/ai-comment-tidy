@@ -63,6 +63,29 @@ describe('監査の既定の検査', () => {
     expect(findings.map((finding) => finding.check)).toEqual(['hedge', 'missing-ref']);
     expect(findings[1]).toMatchObject({ line: 2, detail: '実在しない参照: policy「偽の節」' });
   });
+  test('missing-ref は docs.root の外にあるパス参照の見出しを照合する', () => {
+    const config = loadConfig('unused');
+    config.docs = { root: 'documents', refPattern: '(?<doc>tools/ipad-debug/README\\.md)「(?<heading>[^」]+)」' };
+    const findings = inspect('', '// tools/ipad-debug/README.md「§4.2」\n', {
+      config,
+      documents: {
+        'documents/README.md': '# 別資料\n',
+        'tools/ipad-debug/README.md': '## §4.2 設定\n',
+      },
+    });
+
+    expect(findings.filter(({ check }) => check === 'missing-ref')).toEqual([]);
+  });
+  test('inspectHunks は docs.root の外にある参照先の本文を重要語の保持判定に使う', () => {
+    const config = loadConfig('unused');
+    config.docs = { root: 'documents', refPattern: '(?<doc>tools/policy\\.md)「(?<heading>[^」]+)」' };
+    const findings = inspect('// atomic を守る\n', '// tools/policy.md「制約」\n', {
+      config,
+      documents: { 'tools/policy.md': '# 制約\natomic を使う\n' },
+    });
+
+    expect(findings.filter(({ check }) => check === 'keyword-loss')).toEqual([]);
+  });
   test('hunkがなければ資料を読まず該当なしにする', () => {
     expect(inspectHunks({ hunks: [], currentLines: new Map(), config: loadConfig('unused'), target: null })).toEqual([]);
   });
