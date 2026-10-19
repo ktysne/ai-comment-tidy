@@ -21,8 +21,7 @@ function lastJsonBlock(body) {
     contents = [];
   }
   if (fence?.json) throw new Error('報告の最後の JSON ブロックが閉じられていません');
-  // 閉じていない非 JSON フェンスの中身はコード例なので、末尾の裸の JSON としても読まない。
-  return last ?? (fence === null ? trailingBareJson(body) : null);
+  return last ?? trailingBareJson(body);
 }
 
 // コードフェンスを付けずに置かれた JSON を拾う。本文中のコード例を取り違えないよう、報告の末尾か
@@ -41,7 +40,8 @@ function trailingBareJson(body) {
     if (opening && !(opening[1][0] === '`' && opening[2].includes('`'))) fence = opening[1];
     else if (/^## /u.test(line)) limits.push(index);
   });
-  limits.push(lines.length);
+  // 閉じていない非 JSON フェンスの中身はコード例なので、報告の末尾の裸の JSON としては読まない。
+  if (fence === null) limits.push(lines.length);
   for (const limit of limits.reverse()) {
     const text = bareJsonBefore(lines, limit);
     if (text !== null) return text;

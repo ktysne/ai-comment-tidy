@@ -42,6 +42,11 @@ describe('最終報告の解析', () => {
     const text = `codex-agent: agent=impl-standard\ncodex-agent: run=run-1\n## やったこと\n変更した。\n\n${JSON.stringify(value, null, 2)}\n\n## 見つけた未対応の問題\nなし。\ncodex-agent: result=ok\n`;
     expect(parseReport(text, options())).toEqual({ report: value, notes: [] });
   });
+  test('後ろの節に閉じていないコードフェンスがあっても、前の節の終わりのJSONを読む', () => {
+    const value = { ...empty, needsDecision: [candidate] };
+    const text = `codex-agent: agent=impl-standard\ncodex-agent: run=run-1\n## やったこと\n${JSON.stringify(value, null, 2)}\n## 見つけた未対応の問題\n例:\n\`\`\`text\n{}\ncodex-agent: result=ok\n`;
+    expect(parseReport(text, options())).toEqual({ report: value, notes: [] });
+  });
   test('閉じたコードフェンスの中の見出しを、節の終わりとして扱わない', () => {
     const json = JSON.stringify({ ...empty, needsDecision: [candidate] }, null, 2);
     const text = `codex-agent: agent=impl-standard\ncodex-agent: run=run-1\n例:\n\`\`\`text\n${json}\n## 見出しの例\n\`\`\`\n本文\ncodex-agent: result=ok\n`;
