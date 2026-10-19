@@ -21,7 +21,26 @@ function lastJsonBlock(body) {
     contents = [];
   }
   if (fence?.json) throw new Error('報告の最後の JSON ブロックが閉じられていません');
-  return last;
+  return last ?? trailingBareJson(body);
+}
+
+// コードフェンスを付けずに末尾へ置かれた JSON を拾う。本文中のコード例を取り違えないよう、末尾に限る。
+function trailingBareJson(body) {
+  const lines = body.split(/\r?\n/u);
+  let end = lines.length - 1;
+  while (end >= 0 && (lines[end].trim() === '' || lines[end].startsWith('codex-agent:'))) end--;
+  if (end < 0 || lines[end].trim() !== '}') return null;
+  for (let start = end - 1; start >= 0; start--) {
+    if (lines[start].trim() !== '{') continue;
+    const text = lines.slice(start, end + 1).join('\n');
+    try {
+      JSON.parse(text);
+      return text;
+    } catch {
+      // 入れ子の要素の `{` から読むと閉じが合わないので、さらに前の行を試す。
+    }
+  }
+  return null;
 }
 
 function candidateReport(value, batch, baseline) {
