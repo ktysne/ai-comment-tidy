@@ -137,6 +137,64 @@ describe('検査済みの束の取り込み', { timeout: 20000 }, () => {
     expect(readState(root, 'volume', 'V01').status).toBe('checked');
     expect(fs.existsSync(paths.state)).toBe(true);
   });
+  test('基準より後の担当の重ならないコミットは束の変更と統合する', async () => {
+    const { root } = await makeRepo();
+    write(root, 'src/a.cpp', '// 一\r\n// 二\r\n// 三\r\n// 四\r\nint a;\r\n\r\nint added;\r\n');
+    git(root, ['add', 'src/a.cpp']);
+    git(root, ['commit', '--quiet', '-m', '担当の重ならない変更']);
+    const result = capture();
+    expect(await run(['apply', 'V01', '--repo', root], result.io)).toBe(0);
+    expect(fs.readFileSync(path.join(root, 'src/a.cpp'), 'utf8')).toBe('// 一\r\nint a;\r\n\r\nint added;\r\n');
+    expect(result.out[0]).toContain('統合した担当ファイル: src/a.cpp');
+    expect(readState(root, 'volume', 'V01').status).toBe('applied');
+  });
+  test('LFで検査した束をCRLFのHEADと統合しHEADの行末で写す', async () => {
+    const { root, paths } = await makeRepo();
+    write(paths.worktree, 'src/a.cpp', '// 一\nint a;\n');
+    expect(await run(['check', 'V01', '--repo', root], capture().io)).toBe(0);
+    write(root, 'src/a.cpp', '// 一\r\n// 二\r\n// 三\r\n// 四\r\nint a;\r\n\r\nint added;\r\n');
+    git(root, ['add', 'src/a.cpp']);
+    git(root, ['commit', '--quiet', '-m', '担当の重ならない変更']);
+    expect(await run(['apply', 'V01', '--repo', root], capture().io)).toBe(0);
+    expect(fs.readFileSync(path.join(root, 'src/a.cpp'), 'utf8')).toBe('// 一\r\nint a;\r\n\r\nint added;\r\n');
+  });
+  test('HEADにUTF-8でないバイトがあれば統合せず拒否する', async () => {
+    const { root } = await makeRepo();
+    const head = Buffer.concat([
+      Buffer.from('// 一\r\n// 二\r\n// 三\r\n// 四\r\nint a;\r\n\r\nconst char* s = "', 'utf8'),
+      Buffer.from([0x82, 0xa0]),
+      Buffer.from('";\r\n', 'utf8'),
+    ]);
+    fs.writeFileSync(path.join(root, 'src/a.cpp'), head);
+    git(root, ['add', 'src/a.cpp']);
+    git(root, ['commit', '--quiet', '-m', 'CP932 の文字列']);
+    const before = fs.readFileSync(path.join(root, 'src/a.cpp'));
+    const result = capture();
+    expect(await run(['apply', 'V01', '--repo', root], result.io)).toBe(2);
+    expect(result.err.join('\n')).toContain('UTF-8 として読めません');
+    expect(fs.readFileSync(path.join(root, 'src/a.cpp'))).toEqual(before);
+  });
+  test('統合でHEADのコメント以外が変わるなら拒否する', async () => {
+    const { root } = await makeRepo();
+    write(root, 'src/a.cpp', 'auto s = R"x(\r\n// 一\r\n// 二\r\n// 三\r\n// 四\r\nint a;\r\n)x";\r\n');
+    git(root, ['add', 'src/a.cpp']);
+    git(root, ['commit', '--quiet', '-m', 'コメントを文字列にする']);
+    const before = fs.readFileSync(path.join(root, 'src/a.cpp'));
+    const result = capture();
+    expect(await run(['apply', 'V01', '--repo', root], result.io)).toBe(2);
+    expect(result.err.join('\n')).toContain('コメント以外の部分が変わります');
+    expect(fs.readFileSync(path.join(root, 'src/a.cpp'))).toEqual(before);
+    expect(readState(root, 'volume', 'V01').status).toBe('checked');
+  });
+  test('基準より後に担当のモードが変わったコミットを拒否する', async () => {
+    const { root } = await makeRepo();
+    git(root, ['update-index', '--chmod=+x', 'src/a.cpp']);
+    git(root, ['commit', '--quiet', '-m', 'モードの変更']);
+    const before = fs.readFileSync(path.join(root, 'src/a.cpp'));
+    expect(await run(['apply', 'V01', '--repo', root], capture().io)).toBe(2);
+    expect(fs.readFileSync(path.join(root, 'src/a.cpp'))).toEqual(before);
+    expect(readState(root, 'volume', 'V01').status).toBe('checked');
+  });
   test('基準より後の担当外のコミットを許し外部設定と回を受ける', async () => {
     const { root } = await makeRepo();
     write(root, 'src/b.cpp', 'int later;\r\n');

@@ -4,12 +4,13 @@ import path from 'node:path';
 import { selectBatch } from '../batches.js';
 import { loadConfig } from '../config.js';
 import { assertSafeAssignedPath, batchPaths, ensureManagedPath, validateName } from '../paths.js';
-import { changedAssignedFiles, createGitSnapshot, repositoryRoot } from '../snapshot/git.js';
+import { changedAssignedFiles, createGitSnapshot, mergeFileContents, repositoryRoot } from '../snapshot/git.js';
 import { validateBatchWorktree } from '../snapshot/worktree.js';
 import { readState, transitionState, writeState } from '../state.js';
 import { runCheck } from '../check/run.js';
 import { recordBatchCheck } from '../check/results.js';
 import { formatSummary } from '../check/summary.js';
+import { normalizedCode } from '../lex/normalized-code.js';
 
 function parseArgs(argv) {
   const options = {};
@@ -35,6 +36,42 @@ function parseArgs(argv) {
 
 function git(root, args) {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+}
+
+function fileModes(root, ref, files) {
+  const output = git(root, ['ls-tree', '-z', ref, '--', ...files.map((file) => `:(literal)${file}`)]);
+  const modes = new Map();
+  for (const entry of output.split('\0').filter(Boolean)) {
+    const separator = entry.indexOf('\t');
+    modes.set(entry.slice(separator + 1), entry.slice(0, separator).split(' ')[0]);
+  }
+  return modes;
+}
+
+// 置換文字へ黙って読み替えると、HEAD の UTF-8 でないバイトを壊して書き戻すため、厳格に読む。
+function strictText(buffer, file) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buffer);
+  } catch (error) {
+    throw new Error(`統合する担当ファイルを UTF-8 として読めません: ${file}`, { cause: error });
+  }
+}
+
+function codeOf(buffer, file, config) {
+  const text = strictText(buffer, file);
+  return normalizedCode(file, text.charCodeAt(0) === 0xfeff ? text.slice(1) : text, config);
+}
+
+// 検査は束の LF と CRLF の差を許すので、行末が揃った HEAD では LF で統合して HEAD の行末へ戻す。
+// 行末が混在する HEAD は、行ごとの行末を保てないためバイト列のまま統合する。
+function mergeAssignedFile(base, bundle, head, file) {
+  const [baseText, bundleText, headText] = [base, bundle, head].map((buffer) => strictText(buffer, file));
+  const crlf = headText.includes('\r\n');
+  if (crlf && /(^|[^\r])\n/u.test(headText)) return mergeFileContents(base, bundle, head);
+  const toLf = (text) => Buffer.from(text.replace(/\r\n/g, '\n'), 'utf8');
+  const merged = mergeFileContents(toLf(baseText), toLf(bundleText), toLf(headText));
+  if (merged === null || !crlf) return merged;
+  return Buffer.from(strictText(merged, file).replace(/\n/g, '\r\n'), 'utf8');
 }
 
 function regularTarget(root, file) {
@@ -69,13 +106,17 @@ export function runApplyCommand(argv, io) {
   const baseRaw = base.readManyRaw(batch.files);
   const headRaw = head.readManyRaw(batch.files);
   const baseContents = base.readMany(batch.files);
-  git(repoRoot, ['diff', '--quiet', definition.base, 'HEAD', '--', ...batch.files.map((file) => `:(literal)${file}`)]);
+  const headContents = head.readMany(batch.files);
+  const baseModes = fileModes(repoRoot, definition.base, batch.files);
+  const headModes = fileModes(repoRoot, 'HEAD', batch.files);
+  const mergeTargets = [];
   for (const file of batch.files) {
-    if (!baseRaw.get(file).equals(headRaw.get(file))) throw new Error(`統合先の HEAD が基準から変わっています: ${file}`);
+    if (baseModes.get(file) !== headModes.get(file)) throw new Error(`統合先の HEAD で担当ファイルのモードが基準から変わっています: ${file}`);
+    if (!baseRaw.get(file).equals(headRaw.get(file))) mergeTargets.push(file);
     const destination = regularTarget(repoRoot, file);
     original.set(file, fs.readFileSync(destination));
-    if (!original.get(file).equals(baseContents.get(file)) && !original.get(file).equals(baseRaw.get(file))) {
-      throw new Error(`統合先の担当ファイルが基準から変わっています: ${file}`);
+    if (!original.get(file).equals(headContents.get(file)) && !original.get(file).equals(headRaw.get(file))) {
+      throw new Error(`統合先の担当ファイルが HEAD から変わっています: ${file}`);
     }
   }
   if (changedAssignedFiles(repoRoot, batch.files).size) throw new Error('統合先の担当ファイルに未コミットの変更があります');
@@ -92,6 +133,16 @@ export function runApplyCommand(argv, io) {
   if (!result.ok) {
     io.stdout(formatSummary(result));
     return 1;
+  }
+  // 基準より後に HEAD へ入った変更(別の束や設定のコミット)を消さないよう、束の差分を重ねる。
+  // コメントの規則は再検査しない。HEAD 側のコメントはそのコミットの責任で、ここではコードの同一性だけを守る。
+  for (const file of mergeTargets) {
+    const merged = mergeAssignedFile(baseContents.get(file), contents.get(file), headContents.get(file), file);
+    if (merged === null) throw new Error(`統合先の HEAD の変更と束の変更が衝突します: ${file}`);
+    if (codeOf(merged, file, config) !== codeOf(headContents.get(file), file, config)) {
+      throw new Error(`統合すると HEAD のコメント以外の部分が変わります: ${file}`);
+    }
+    contents.set(file, merged);
   }
   const written = [];
   try {
@@ -111,6 +162,7 @@ export function runApplyCommand(argv, io) {
     if (failures.length) throw new Error(`${error.message}; 復元できない担当ファイルがあります: ${failures.join(', ')}`, { cause: error });
     throw error;
   }
-  io.stdout(`${batch.id}: 取り込み済み\n統合先: ${branch}\n担当ファイルを確認してコミットしてください`);
+  const mergedNote = mergeTargets.length ? `\n基準より後の HEAD の変更と統合した担当ファイル: ${mergeTargets.join(', ')}` : '';
+  io.stdout(`${batch.id}: 取り込み済み\n統合先: ${branch}${mergedNote}\n担当ファイルを確認してコミットしてください`);
   return 0;
 }

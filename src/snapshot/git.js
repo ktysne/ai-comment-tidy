@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const MAX_GIT_BUFFER = 1 << 30;
@@ -185,4 +186,21 @@ export function createGitSnapshot(repoRoot, ref = null) {
     },
   };
   return snapshot;
+}
+
+// 衝突があれば null を返す。3 つとも作業ツリーの形(行末の変換後)で渡す。
+export function mergeFileContents(base, ours, theirs) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'comment-tidy-merge-'));
+  try {
+    const names = ['ours', 'base', 'theirs'].map((name) => path.join(directory, name));
+    [ours, base, theirs].forEach((content, index) => fs.writeFileSync(names[index], content));
+    try {
+      return execFileSync('git', ['merge-file', '-p', ...names], { maxBuffer: MAX_GIT_BUFFER, stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (error) {
+      if (Number.isInteger(error.status) && error.status > 0 && error.status < 128) return null;
+      throw error;
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 }
