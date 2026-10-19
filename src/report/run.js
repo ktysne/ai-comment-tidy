@@ -21,7 +21,8 @@ function lastJsonBlock(body) {
     contents = [];
   }
   if (fence?.json) throw new Error('報告の最後の JSON ブロックが閉じられていません');
-  return last ?? trailingBareJson(body);
+  // 閉じていない非 JSON フェンスの中身はコード例なので、末尾の裸の JSON としても読まない。
+  return last ?? (fence === null ? trailingBareJson(body) : null);
 }
 
 // コードフェンスを付けずに末尾へ置かれた JSON を拾う。本文中のコード例を取り違えないよう、末尾に限る。
