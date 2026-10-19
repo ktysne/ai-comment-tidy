@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isTargetFile, loadConfig } from '../config.js';
 import { newViolations } from './new-violations.js';
-import { findViolations } from './rules.js';
+import { analyzeComments } from './rules.js';
 
 const MAX_GIT_BUFFER = 1 << 30;
 
@@ -205,14 +205,15 @@ function fileEntries(repoRoot, mode, files, headExists, baseDirectory, includeUn
 }
 
 /**
- * 作業ツリーから消えたファイルの違反を集める。
+ * 作業ツリーから消えたファイルのコメントのブロックを連ねて、比べる元にする。
  * ステージしていない名前の変更は「削除と未追跡の追加」に見えるので、新しいファイルの比べる元にこれを使う。
  */
-function deletedFileViolations(repoRoot, baselinePaths, options) {
+function deletedFileBaseline(repoRoot, baselinePaths, options) {
   const deleted = gitPaths(repoRoot, ['diff', '--name-only', '-z', '--diff-filter=D', 'HEAD', '--']);
-  return deleted
+  const blocks = deleted
     .filter((deletedPath) => isTargetFile(deletedPath, options.config, { include: false }))
-    .flatMap((deletedPath) => findViolations(deletedPath, headSource(repoRoot, deletedPath, baselinePaths), options));
+    .flatMap((deletedPath) => analyzeComments(deletedPath, headSource(repoRoot, deletedPath, baselinePaths), options).blocks);
+  return { blocks };
 }
 
 function emptyResult() {
@@ -271,15 +272,15 @@ export function lintRepository({
       ? indexSource(root, relativePath)
       : worktreeSource(root, relativePath);
     const basePath = entry.basePath;
-    const currentViolations = findViolations(relativePath, currentSource, options);
-    let baselineViolations;
+    const current = analyzeComments(relativePath, currentSource, options);
+    let baseline;
     if ((mode === 'changed' || entry.source === 'worktree') && headExists && !baselinePaths.has(basePath)) {
-      movedBaseline ??= deletedFileViolations(root, baselinePaths, options);
-      baselineViolations = movedBaseline;
+      movedBaseline ??= deletedFileBaseline(root, baselinePaths, options);
+      baseline = movedBaseline;
     } else {
-      baselineViolations = findViolations(relativePath, headSource(root, basePath, baselinePaths), options);
+      baseline = analyzeComments(relativePath, headSource(root, basePath, baselinePaths), options);
     }
-    const violations = newViolations(currentViolations, baselineViolations);
+    const violations = newViolations(current, baseline);
     if (violations.length === 0) continue;
     for (const violation of violations) {
       if (violation.severity === 'confirmed') confirmed++;

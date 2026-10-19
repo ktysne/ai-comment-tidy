@@ -1,3 +1,4 @@
+import { blockAnchors, compactBlockText } from '../block-correspondence.js';
 import { commentBlocks } from '../comment-blocks.js';
 import { languageFor } from '../lex/index.js';
 import {
@@ -12,6 +13,9 @@ const ISSUE_REFERENCE_PATTERN = /[Ii]ssue ?#\d+|PR ?#\d+|(?<![0-9A-Za-z&#])#\d{1
 const TICKET_PATTERN = /\b(?!(?:UTF|ISO|IEC|IEEE|ECMA|MPEG|SHA|MD|CRC|CP|AES|RSA|MP|JIS)-)[A-Z][A-Z0-9]+-\d+\b|[Ii]ssue ?#\d+|PR ?#\d+|(?<![0-9A-Za-z&#])#\d+(?![0-9A-Fa-f])|(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|www\.)\S+|\bTracking\b|追跡先/;
 const TODO_PATTERN = /\b(?:TODO|FIXME|HACK)\b/;
 
+const digitsOnly = (text) => text.replace(/\D/g, '');
+
+// evidenceKey は根拠の鍵を決める。省くと、当たった語から空白を除いたものになる。
 const RULES = [
   {
     ruleId: 'length',
@@ -22,11 +26,13 @@ const RULES = [
     ruleId: 'issue-ref',
     severity: 'confirmed',
     pattern: ISSUE_REFERENCE_PATTERN,
+    evidenceKey: digitsOnly,
     hint: 'Issue 番号や PR 番号をコメントから削除する。',
   },
   {
     ruleId: 'date',
     severity: 'confirmed',
+    evidenceKey: digitsOnly,
     pattern: /20\d{2}-\d{2}-\d{2}|20\d{2}\/\d{1,2}\/\d{1,2}|20\d{2} ?年 ?\d{1,2} ?月/,
     ignoreMatch: (body, index, length) => isDatePath(body, index, length)
       || isInsideJapaneseQuote(body, index, length),
@@ -35,6 +41,7 @@ const RULES = [
   {
     ruleId: 'separator',
     severity: 'confirmed',
+    evidenceKey: (text) => text.trim(),
     hint: '区切り線を削除する。',
   },
   {
@@ -133,31 +140,36 @@ function isAllowedHit(patterns, body, matchIndex, matchLength) {
   });
 }
 
-function firstMatch(patterns, text, ignoreMatch) {
+function* allMatches(patterns, text, ignoreMatch) {
   for (const pattern of patterns) {
     const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
     const searchingPattern = new RegExp(pattern.source, flags);
     let match = searchingPattern.exec(text);
     while (match) {
-      if (ignoreMatch?.(match.index, match[0].length, match[0])) {
-        searchingPattern.lastIndex = match.index + Math.max(match[0].length, 1);
-        match = searchingPattern.exec(text);
-        continue;
+      if (!ignoreMatch?.(match.index, match[0].length, match[0])) {
+        const leadingWhitespace = match[0].length - match[0].trimStart().length;
+        const trimmed = match[0].trim();
+        yield { text: trimmed, index: match.index + leadingWhitespace, length: trimmed.length };
       }
-      const leadingWhitespace = match[0].length - match[0].trimStart().length;
-      const trimmed = match[0].trim();
-      return { text: trimmed, index: match.index + leadingWhitespace, length: trimmed.length };
+      searchingPattern.lastIndex = match.index + Math.max(match[0].length, 1);
+      match = searchingPattern.exec(text);
     }
   }
-  return null;
 }
 
-function firstMatchInBodies(patterns, bodies, ignoreMatch) {
+// 改行でつないだ本文の当たりを先に返し、詰めた本文の当たりは、先に返した当たりと重ならないものだけを返す。
+function* matchesInBodies(patterns, bodies, ignoreMatch, compactedIndexMap) {
+  const accepted = [];
   for (const [bodyIndex, body] of bodies.entries()) {
-    const match = firstMatch(patterns, body, (index, length, text) => ignoreMatch?.(bodyIndex, index, length, text));
-    if (match) return { ...match, body };
+    const sourceIndexOf = (index) => (bodyIndex === 0 ? index : compactedIndexMap[index]);
+    for (const match of allMatches(patterns, body, (index, length, text) => ignoreMatch?.(bodyIndex, index, length, text))) {
+      const sourceStart = sourceIndexOf(match.index);
+      const sourceEnd = bodyIndex === 0 ? sourceStart + match.length : sourceIndexOf(match.index + match.length - 1) + 1;
+      if (accepted.some((range) => sourceStart < range.end && sourceEnd > range.start)) continue;
+      accepted.push({ start: sourceStart, end: sourceEnd });
+      yield { ...match, body };
+    }
   }
-  return null;
 }
 
 function isInsideJapaneseQuote(body, index, length) {
@@ -204,31 +216,28 @@ function compactedBodyIndexMap(body) {
 function matchRule(rule, block, bodies, countedLines, language, compactedIndexMap) {
   const [linedBody] = bodies;
   if (rule.ruleId === 'length') {
-    if (countedLines <= 0 || countedLines <= rule.maxCommentLines) return null;
-    return { text: `${countedLines} 行`, index: null, length: 0, body: linedBody };
+    if (countedLines <= 0 || countedLines <= rule.maxCommentLines) return [];
+    return [{ text: `${countedLines} 行`, index: null, length: 0, body: linedBody }];
   }
 
   if (rule.ruleId === 'separator') {
     const pattern = language?.separatorPattern;
     const slashOnly = language?.id === 'cpp' || language?.id === 'csharp' || language?.id === 'js' || language?.id === 'ts';
-    for (const line of block.lines) {
-      if (pattern?.test(line.text) || (slashOnly && /^\/{4,}$/.test(line.text))) {
-        return { text: line.text, index: null, length: 0, body: linedBody };
-      }
-    }
-    return null;
+    return block.lines
+      .filter((line) => pattern?.test(line.text) || (slashOnly && /^\/{4,}$/.test(line.text)))
+      .map((line) => ({ text: line.text, index: null, length: 0, body: linedBody }));
   }
 
-  if (rule.ruleId === 'issue-ref' && /(\b(?:TODO|FIXME|HACK)\b|\bTracking\b|追跡先)/.test(linedBody)) return null;
+  if (rule.ruleId === 'issue-ref' && /(\b(?:TODO|FIXME|HACK)\b|\bTracking\b|追跡先)/.test(linedBody)) return [];
   if (rule.ruleId === 'todo-no-ticket') {
-    if (!TODO_PATTERN.test(linedBody) || TICKET_PATTERN.test(linedBody)) return null;
-    return firstMatchInBodies([TODO_PATTERN], [linedBody]);
+    if (!TODO_PATTERN.test(linedBody) || TICKET_PATTERN.test(linedBody)) return [];
+    return [...matchesInBodies([TODO_PATTERN], [linedBody])];
   }
 
   // 改行でつないだ本文だけだと、折り返しで 2 行に分かれた語を拾えない。
   // 詰めた本文だけだと、行末の `#123` が次の行の数字とつながって外れる。
   const patterns = rule.patterns ?? (rule.pattern ? [rule.pattern] : []);
-  return firstMatchInBodies(patterns, bodies, rule.ignoreMatch
+  return [...matchesInBodies(patterns, bodies, rule.ignoreMatch
     ? (bodyIndex, index, length, text) => {
       const sourceIndex = bodyIndex === 0 ? index : compactedIndexMap[index];
       const sourceEnd = bodyIndex === 0
@@ -236,23 +245,46 @@ function matchRule(rule, block, bodies, countedLines, language, compactedIndexMa
         : compactedIndexMap[index + length - 1] + 1;
       return rule.ignoreMatch(bodies[0], sourceIndex, sourceEnd - sourceIndex, text);
     }
-    : undefined);
+    : undefined, compactedIndexMap)];
 }
 
-export function findViolations(filePath, source, options = {}) {
-  const maxCommentLines = options.maxCommentLines ?? DEFAULT_MAX_COMMENT_LINES;
-  const licensePatterns = makePatterns(options.licensePatterns ?? DEFAULT_LICENSE_PATTERNS, 'licensePatterns');
-  const allowPatterns = (options.allow ?? []).map(({ pattern }) => {
+function compileAllow(allow) {
+  return allow.map(({ pattern }) => {
     try {
       return new RegExp(pattern);
     } catch {
       throw new Error('allow の pattern は正規表現として解釈できません');
     }
   });
+}
+
+/**
+ * ファイルのコメントを検査する。
+ * 戻り値の `violations` は 1 ブロック 1 規則につき 1 件の違反で、
+ * `blocks` はすべてのブロックの、対応付けと新旧の比較に使う情報(本文、アンカー、行数、規則ごとの根拠)である。
+ */
+export function analyzeComments(filePath, source, options = {}) {
+  const maxCommentLines = options.maxCommentLines ?? DEFAULT_MAX_COMMENT_LINES;
+  const licensePatterns = makePatterns(options.licensePatterns ?? DEFAULT_LICENSE_PATTERNS, 'licensePatterns');
+  const allowPatterns = compileAllow(options.allow ?? []);
   const language = languageFor(filePath, options.config);
   const violations = [];
+  const blocks = [];
+  const commentBlockList = commentBlocks(filePath, source, options.config);
+  const anchors = blockAnchors(filePath, source, options.config, commentBlockList);
 
-  for (const block of commentBlocks(filePath, source, options.config)) {
+  for (const [blockIndex, block] of commentBlockList.entries()) {
+    const entry = {
+      startLine: block.startLine,
+      endLine: block.endLine,
+      compact: compactBlockText(block),
+      anchor: anchors[blockIndex],
+      lineCount: 0,
+      evidence: {},
+      reported: {},
+    };
+    blocks.push(entry);
+
     const body = block.text;
     const ruleBody = body.replace(/\n/g, '');
     const compactedIndexMap = compactedBodyIndexMap(body);
@@ -260,10 +292,11 @@ export function findViolations(filePath, source, options = {}) {
     if (block.lines.length > 0 && block.lines.every(({ text }) => TOOL_ANNOTATION_PATTERN.test(text))) continue;
 
     const countedLines = countLinesExcludingToolNotes(block, language?.id);
+    entry.lineCount = countedLines;
     for (const rule of RULES) {
       // 行を改行でつないだ本文を先に調べる。詰めた本文だけだと、行末の `#123` が次の行の数字とつながって外れる。
       // 詰めた本文は、折り返しで 2 行に分かれた語を拾うために調べる。
-      const match = matchRule(
+      const hits = matchRule(
         { ...rule, maxCommentLines },
         block,
         [body, ruleBody],
@@ -271,20 +304,31 @@ export function findViolations(filePath, source, options = {}) {
         language,
         compactedIndexMap,
       );
-      if (!match || isAllowedHit(allowPatterns, match.body, match.index, match.length)) continue;
-      violations.push({
+      const allowedFlags = hits.map((hit) => isAllowedHit(allowPatterns, hit.body, hit.index, hit.length));
+      const evidenceKey = rule.evidenceKey ?? ((text) => text.replace(/\s/g, ''));
+      entry.evidence[rule.ruleId] = rule.ruleId === 'length'
+        ? []
+        : hits.filter((_, index) => !allowedFlags[index]).map((hit) => evidenceKey(hit.text));
+      if (hits.length === 0 || allowedFlags[0]) continue;
+      const violation = {
         ruleId: rule.ruleId,
         severity: rule.severity,
         startLine: block.startLine,
         endLine: block.endLine,
-        matched: match.text,
+        matched: hits[0].text,
         hint: rule.ruleId === 'length'
           ? `${maxCommentLines} 行までに縮めるか、設計資料へ移して参照を 1 行置く。`
           : rule.hint,
-        key: `${rule.ruleId}:${body.replace(/\s/g, '')}`,
-      });
+      };
+      violations.push(violation);
+      entry.reported[rule.ruleId] = violation;
     }
   }
 
-  return violations;
+  return { violations, blocks };
+}
+
+/** ファイルのコメントの違反だけを返す。 */
+export function findViolations(filePath, source, options = {}) {
+  return analyzeComments(filePath, source, options).violations;
 }
