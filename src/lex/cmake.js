@@ -1,3 +1,5 @@
+import { separatorPattern } from './separator.js';
+
 function bracketDelimiter(source, position) {
   const match = /^\[(=*)\[/.exec(source.slice(position, position + 64));
   return match ? match[1] : null;
@@ -66,5 +68,5 @@ export const language = {
   extensions: ['cmake'],
   lex: lexCmake,
   docCommentMarkers: [],
-  separatorPattern: /^#+\s*(?:[=*~#_-]{4,}|[=-]{3,}\s.*\s[=-]{3,}\s*)$/i,
+  separatorPattern: separatorPattern(/#+/),
 };

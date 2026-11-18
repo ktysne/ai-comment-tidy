@@ -1,3 +1,5 @@
+import { separatorPattern } from './separator.js';
+
 export function lexBat(source) {
   const segments = [];
   let position = 0;
@@ -23,5 +25,5 @@ export const language = {
   extensions: ['bat', 'cmd'],
   lex: lexBat,
   docCommentMarkers: [],
-  separatorPattern: /^(?:rem\b|::)\s*(?:[=*~#_-]{4,}|[=-]{3,}\s.*\s[=-]{3,}\s*)$/i,
+  separatorPattern: separatorPattern(/(?:rem\b|::)/),
 };

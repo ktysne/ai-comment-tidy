@@ -31,6 +31,17 @@ describe('stats のファイル集計', () => {
     });
   });
 
+  test('罫線文字の線と、罫線文字で見出しを挟んだ行を区切り線の行に数える', () => {
+    const source = '// ─────────────────────────────\n// ── 本体 ─────────────────────\n// ═══════════════\n// ── 注意: 本文\nconst x = 1;';
+    expect(stats('a.js', source)).toMatchObject({ comment: 4, separator: 3 });
+    expect(stats('source.ts', '// ━━━━━━━━')).toMatchObject({ separator: 1 });
+    expect(stats('source.cpp', '// ── 見出し ───')).toMatchObject({ separator: 1 });
+    expect(stats('source.cs', '// ╔══════╗')).toMatchObject({ separator: 1 });
+    expect(stats('module.cmake', '# ── 見出し ───')).toMatchObject({ separator: 1 });
+    expect(stats('build.bat', 'rem ─────\n:: ── 見出し ───\n')).toMatchObject({ separator: 2 });
+    expect(stats('source.js', '// -- 見出し ---')).toMatchObject({ separator: 0 });
+  });
+
   test('C# の行とブロックの doc コメントを数える', () => {
     expect(stats('source.cs', '/// docs\n/** block */\nint value;')).toEqual({
       lines: 3,
