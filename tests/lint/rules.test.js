@@ -78,6 +78,30 @@ describe('コメント規則', () => {
     expect(violations('rem ----------------', 'file.bat').map(({ ruleId }) => ruleId)).toEqual(['separator']);
   });
 
+  test('罫線文字の線と、罫線文字で見出しを挟んだ行を区切り線として検出する', () => {
+    const separators = (source, filePath) => violations(source, filePath)
+      .filter(({ ruleId }) => ruleId === 'separator')
+      .map(({ matched }) => matched);
+    const lines = ['// ─────────────────────────────', '// ── 本体 ─────────────────────', '// ═══════════════'];
+    expect(violations(`${lines.join('\n')}\nconst x = 1;`, 'a.js').map(({ ruleId, startLine, endLine }) => ({ ruleId, startLine, endLine })))
+      .toEqual([{ ruleId: 'separator', startLine: 1, endLine: 3 }]);
+    for (const line of lines) expect(separators(line, 'a.js')).toEqual([line]);
+    expect(separators('// ━━━━━━━━', 'file.ts')).toHaveLength(1);
+    expect(separators('// ── 見出し ───', 'file.cpp')).toHaveLength(1);
+    expect(separators('// ╔══════╗', 'file.cs')).toHaveLength(1);
+    expect(separators('# ── 見出し ───', 'file.cmake')).toHaveLength(1);
+    expect(separators('rem ─────', 'file.bat')).toHaveLength(1);
+    expect(separators(':: ── 見出し ───', 'file.bat')).toHaveLength(1);
+  });
+
+  test('右側に線の無い本文や、線の短い ASCII の見出しを区切り線にしない', () => {
+    const separators = (source, filePath = 'file.js') => violations(source, filePath).filter(({ ruleId }) => ruleId === 'separator');
+    expect(separators('// ── 注意: 本文')).toEqual([]);
+    expect(separators('// ├── src/')).toEqual([]);
+    expect(separators('// ─ 見出し ───')).toEqual([]);
+    expect(separators('// -- 見出し ---')).toEqual([]);
+  });
+
   test('経緯と変更の記録を見直し候補として検出する', () => {
     for (const text of ['以前はこの値を使っていた', '従来はこの値を使う', '旧実装の制約', '当初はこの値を使った']) {
       expect(violations(`// ${text}`).map(({ ruleId, severity }) => ({ ruleId, severity })))

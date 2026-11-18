@@ -364,9 +364,15 @@ export const language = {
   id: 'cpp',
   lex(source) { /* → [{ kind: 'code' | 'string' | 'comment', start, end }] */ },
   docCommentMarkers: ['///', '///<'],
-  separatorPattern: /^\/\/+\s*[=\-*~#_]{4,}\s*$/,
+  separatorPattern: separatorPattern(/\/\/+/),
 };
 ```
+
+`separatorPattern` は `src/lex/separator.js` の関数で、コメントの開始記号を受け取り、次の 2 つの形に当たる正規表現を作る。
+線の記号には、ASCII の `=`、`-` などに加えて、罫線素片(U+2500〜U+257F の `─`、`━`、`═` など)を含める。
+
+- 線だけの行: 記号が 4 文字以上並ぶ行(`// ----`、`// ─────`)。
+- 見出しを挟む行: 左右の線で見出しを挟む行(`// --- 見出し ---`、`// ── 見出し ───`)。右側の線は 3 文字以上とし、`// ── 注意: 本文` のような 1 行の本文には当てない。左側は 3 文字以上とし、罫線文字を含むときだけ 2 文字から当てる。
 
 対応する言語は、C++、C#、JavaScript、TypeScript、CMake、bat である。
 `.tsx` は JSX のテキストの扱いを決めるまで対象外とする。

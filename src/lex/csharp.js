@@ -1,3 +1,5 @@
+import { separatorPattern } from './separator.js';
+
 function csharpStringStart(source, index) {
   let prefixEnd = index;
   let dollarCount = 0;
@@ -257,5 +259,5 @@ export const language = {
   extensions: ['cs'],
   lex(source) { return lexCSharp(source); },
   docCommentMarkers: ['///', '/**'],
-  separatorPattern: /^\/\/+\s*(?:[=*~#_-]{4,}|[=-]{3,}\s.*\s[=-]{3,}\s*)$/i,
+  separatorPattern: separatorPattern(/\/\/+/),
 };

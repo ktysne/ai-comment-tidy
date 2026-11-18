@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
+import { language as jsLanguage } from '../../src/lex/js.js';
 import { language } from '../../src/lex/typescript.js';
 
 describe('TypeScript の字句解析', () => {
@@ -74,6 +75,6 @@ describe('TypeScript の字句解析', () => {
 
   test('TypeScript の拡張子と区切り線を公開する', () => {
     expect(language.extensions).toEqual(['ts', 'mts', 'cts']);
-    expect(language.separatorPattern).toEqual(/^\/\/+\s*(?:[=*~#_-]{4,}|[=-]{3,}\s.*\s[=-]{3,}\s*)$/i);
+    expect(language.separatorPattern).toEqual(jsLanguage.separatorPattern);
   });
 });
